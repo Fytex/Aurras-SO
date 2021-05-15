@@ -348,6 +348,7 @@ transform(const char * const input, const char * const output, const char * cons
             free(buffer);
         }
 
+        unlink(fifo_str);
         free(fifo_str);
         
     }

@@ -8,7 +8,11 @@
 #include <fcntl.h>
 
 #define MAIN_FIFO "tmp/FIFO_MAIN"
+#define TMP_FOLDER "tmp/"
 #define PROGRAM "aurras"
+
+#define STRLEN(s) (sizeof(s)/sizeof(s[0])) - sizeof(s[0])
+
 #define PAGE_SIZE 4096
 
 #define FOREACH_ERROR(_)                                                                    \
@@ -67,12 +71,12 @@ create_connection(char ** const fifo_str, int32_t send_bytes)
     if ((main_fifo = open(MAIN_FIFO, O_WRONLY)) != -1)
     {
         pid = getpid();
-        pid_str = malloc((snprintf(NULL, 0, "%d", pid) + 1) * sizeof (char));
+        pid_str = malloc((STRLEN(TMP_FOLDER) + snprintf(NULL, 0, "%d", pid) + 1) * sizeof (char));
 
         if (pid_str != NULL)
         {
 
-            snprintf(pid_str, 0, "%d", pid); // Using same function to garantee same code
+            snprintf(pid_str, 0, "%s%d", TMP_FOLDER, pid); // Using same function to garantee same code
 
             if (access(pid_str, R_OK | W_OK) == 0 || mkfifo(pid_str, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH) != -1) // 0666
             {

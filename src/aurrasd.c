@@ -504,15 +504,13 @@ run_task(const Task * const task)
                 dup2(file, STDIN_FILENO);
                 close(file);
 
-                file = open(task->output, O_WRONLY | O_CREAT,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); // 0666
+                file = open(task->output, O_WRONLY | O_CREAT | O_TRUNC,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); // 0666    
                 printf("%d -> %s\n", file, task->output);
                 printf("F: %d | %s | %s\n", ordered_filters[0], filters[ordered_filters[0]].path, filters[ordered_filters[0]].name);
                 dup2(file, STDOUT_FILENO);
                 close(file);
 
                 filter = filters[ordered_filters[0]];
-                puts(filter.path);
-                puts(filter.name);
                 execlp(filter.path, filter.name, NULL);
                 _exit(1);
             
@@ -588,8 +586,8 @@ run_task(const Task * const task)
             case 0:
                 dup2(array_pipes[len - 2][0], STDIN_FILENO);
                 close(array_pipes[len - 2][0]);
-
-                file = open(task->output, O_WRONLY);
+                
+                file = open(task->output, O_WRONLY | O_CREAT | O_TRUNC,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); // 0666
                 dup2(file, STDOUT_FILENO);
                 close(file);           
 

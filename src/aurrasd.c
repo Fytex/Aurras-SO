@@ -547,7 +547,7 @@ run_task(const Task * const task)
                 _exit(1);
             
             default:
-                close(array_pipes[0][1]); 
+                close(array_pipes[0][1]);
         }
 
         for(uint32_t i = 1; i < len - 1; ++i)
@@ -591,7 +591,7 @@ run_task(const Task * const task)
                 dup2(file, STDOUT_FILENO);
                 close(file);           
 
-                filter = filters[ordered_filters[len - 2]]; 
+                filter = filters[ordered_filters[len - 1]]; 
                 execlp(filter.path, filter.name, NULL);
                 _exit(1);
 

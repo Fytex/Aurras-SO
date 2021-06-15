@@ -12,6 +12,7 @@
 #include "buffer_manager.h"
 #include "errors.h"
 
+#define FILTERS_FOLDER "bin/aurrasd-filters/"
 #define MAIN_FIFO "tmp/FIFO_MAIN"
 #define TMP_FOLDER "tmp/"
 #define PROGRAM "aurrasd"
@@ -310,34 +311,44 @@ load_configs(const char * const configs_file, const char * const filters_folder)
                         
                         if (found != NULL)
                         {
-                            filter.path = strdup(strsep(&found, " "));
-
-                            if (found != NULL)
+                            char * relative_path = strsep(&found, " ");
+                            char * path = malloc((STRLEN(FILTERS_FOLDER) + strlen(relative_path) + 1) * sizeof (char));
+                            if(path != NULL)
                             {
-                                filter.max = atoi(strsep(&found, " ")); // Not checking if is a valid int or if it doesn't have more arguments
-                                filter.current = 0;
+                                filter.path = strcat(strcpy(path, FILTERS_FOLDER), relative_path);
 
-                                if (size == total)
+                                if (found != NULL)
                                 {
-                                    size *= 2;
-                                    filters_new_buffer = realloc(filters_buffer, size * sizeof (Filter));
+                                    filter.max = atoi(strsep(&found, " ")); // Not checking if is a valid int or if it doesn't have more arguments
+                                    filter.current = 0;
 
-                                    if (filters_new_buffer != NULL)
+                                    if (size == total)
                                     {
-                                        filters_buffer = filters_new_buffer;
-                                        filters_buffer[total++] = filter;
-                                        
+                                        size *= 2;
+                                        filters_new_buffer = realloc(filters_buffer, size * sizeof (Filter));
+
+                                        if (filters_new_buffer != NULL)
+                                        {
+                                            filters_buffer = filters_new_buffer;
+                                            filters_buffer[total++] = filter;
+                                            
+                                        }
+                                        else
+                                            error = NOT_ENOUGH_MEMORY;
+                                            
                                     }
                                     else
-                                        error = NOT_ENOUGH_MEMORY;
-                                        
+                                        filters_buffer[total++] = filter;
+
                                 }
                                 else
-                                    filters_buffer[total++] = filter;
-
+                                    error = CONFIGS_FILE_FAILED;
+                                
+                                if (error != SUCCESS)
+                                    free(path);
                             }
                             else
-                                error = CONFIGS_FILE_FAILED;
+                                error = NOT_ENOUGH_MEMORY;
                         }
                         else
                             error = CONFIGS_FILE_FAILED;
@@ -495,9 +506,10 @@ run_task(const Task * const task)
 
                 file = open(task->output, O_WRONLY | O_CREAT,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); // 0666
                 printf("%d -> %s\n", file, task->output);
+                printf("F: %d | %s | %s\n", ordered_filters[0], filters[ordered_filters[0]].path, filters[ordered_filters[0]].name);
                 dup2(file, STDOUT_FILENO);
                 close(file);
-                
+
                 filter = filters[ordered_filters[0]];
                 puts(filter.path);
                 puts(filter.name);

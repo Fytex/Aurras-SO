@@ -487,20 +487,21 @@ check_task_can_run(const Task * const task, int * result)
 }
 */
 static Error
-run_task(const Task * const task)
+run_task(Task * const task)
 {
     puts("run_task");
     Filter filter;
     uint32_t * ordered_filters = task->ordered_filters;
     uint32_t len = task->len_filters;
     int file;
+    pid_t pid;
 
     if (len == 1)
     {
         puts("fork");
         signal(SIGCHLD, last_sigchld_handler); // catch this process
 
-        switch (fork())
+        switch ((pid = fork()))
         {
             case -1:
                 return CANT_CREATE_PROCESS;
@@ -522,7 +523,7 @@ run_task(const Task * const task)
                 _exit(1);
             
             default:
-                break;
+                task->last_filter_pid = pid;
         }
     }
     else
@@ -589,7 +590,7 @@ run_task(const Task * const task)
 
         signal(SIGCHLD, last_sigchld_handler); // catch this last process
 
-        switch (fork())
+        switch ((pid = fork()))
         {
             case -1:
                 return CANT_CREATE_PROCESS;
@@ -606,7 +607,8 @@ run_task(const Task * const task)
                 execlp(filter.path, filter.name, NULL);
                 _exit(1);
 
-            default:      
+            default:
+                task->last_filter_pid = pid;
                 close(array_pipes[len - 2][0]);                    
         }
 

@@ -475,7 +475,7 @@ run_task(const Task * const task)
 {
     puts("run_task");
     Filter filter;
-    uint32_t * table_count_filters = task->table_count_filters;
+    uint32_t * ordered_filters = task->ordered_filters;
     uint32_t len = task->len_filters;
     int file;
 
@@ -498,7 +498,7 @@ run_task(const Task * const task)
                 dup2(file, STDOUT_FILENO);
                 close(file);
                 
-                filter = filters[table_count_filters[0]];
+                filter = filters[ordered_filters[0]];
                 puts(filter.path);
                 puts(filter.name);
                 execlp(filter.path, filter.name, NULL);
@@ -532,7 +532,7 @@ run_task(const Task * const task)
                 dup2(array_pipes[0][1], STDOUT_FILENO);
                 close(array_pipes[0][1]);
 
-                filter = filters[table_count_filters[0]];
+                filter = filters[ordered_filters[0]];
                 execlp(filter.path, filter.name, NULL);
                 _exit(1);
             
@@ -558,7 +558,7 @@ run_task(const Task * const task)
                     dup2(array_pipes[i][1], STDOUT_FILENO);
                     close(array_pipes[i][1]);     
 
-                    filter = filters[table_count_filters[i]];  
+                    filter = filters[ordered_filters[i]];  
                     execlp(filter.path, filter.name, NULL);
                     _exit(1);
 
@@ -581,7 +581,7 @@ run_task(const Task * const task)
                 dup2(file, STDOUT_FILENO);
                 close(file);           
 
-                filter = filters[table_count_filters[len - 2]]; 
+                filter = filters[ordered_filters[len - 2]]; 
                 execlp(filter.path, filter.name, NULL);
                 _exit(1);
 

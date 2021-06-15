@@ -34,14 +34,14 @@ print_cmds_help(void)
 }
 
 static Error
-create_connection(char ** const ext_fifo_str, int32_t send_bytes)
+create_connection(char ** const ext_fifo_str, uint32_t send_bytes)
 {
     int main_fifo;
     ssize_t fifo_str_len;
     pid_t pid;
     char * fifo_str;
     Error error = SUCCESS;
-    int32_t data[2];
+    uint32_t data[2];
 
     if ((main_fifo = open(MAIN_FIFO, O_WRONLY)) != -1)
     {
@@ -97,8 +97,8 @@ ask_status(void)
     char * fifo_str;
     int fifo;
     pid_t server_pid;
-    int32_t n_tasks, n_filters, num_task;
-    int32_t running, max;
+    uint32_t n_tasks, n_filters, num_task;
+    uint32_t running, max;
     ssize_t bytes_left, bytes_written;
 
     error = create_connection(&fifo_str, 0); // if we don't send any bytes then must be status command
@@ -112,7 +112,7 @@ ask_status(void)
         error = init_ReadBuffer(&buffer_read, fifo, 0);
         if (error == SUCCESS)
         {
-            if (u32_from_BufferRead(&buffer_read, &server_pid) == SUCCESS &&
+            if (u32_from_BufferRead(&buffer_read, (uint32_t *) &server_pid) == SUCCESS &&
                 u32_from_BufferRead(&buffer_read, &n_tasks) == SUCCESS &&
                 u32_from_BufferRead(&buffer_read, &n_filters) == SUCCESS)
             {
@@ -208,11 +208,11 @@ ask_status(void)
 
 
 static Error
-transform(const char * const input, const char * const output, const char * const * const filters, int32_t n_filters)
+transform(const char * const input, const char * const output, const char * const * const filters, uint32_t n_filters)
 {
     Error error;
-    int32_t send_bytes;
-    int32_t * filters_send_bytes;
+    uint32_t send_bytes;
+    uint32_t * filters_send_bytes;
     unsigned char * buffer, * buffer_cursor;
     char * fifo_str;
     int fifo;
@@ -224,15 +224,18 @@ transform(const char * const input, const char * const output, const char * cons
     if (access(input, F_OK) == -1)
         return INPUT_NOT_FOUND;
 
-    filters_send_bytes = malloc(n_filters * sizeof (size_t));
+    filters_send_bytes = malloc((n_filters + 2) * sizeof (size_t)); // filters + input + output
 
     if (filters_send_bytes == NULL)
         return NOT_ENOUGH_MEMORY;
 
     send_bytes = 0;
 
+    send_bytes += (filters_send_bytes[0] = strlen(input) + 1);
+    send_bytes += (filters_send_bytes[1] = strlen(output) + 1);
+
     for (int i = 0; i < n_filters; ++i)
-        send_bytes += (filters_send_bytes[i] = strlen(filters[i]) + 1);
+        send_bytes += (filters_send_bytes[i + 2] = strlen(filters[i]) + 1);
 
     error = create_connection(&fifo_str, send_bytes);
 
@@ -247,12 +250,18 @@ transform(const char * const input, const char * const output, const char * cons
             {
                 buffer_cursor = buffer;
 
+                // input
+                memcpy(buffer_cursor, input, filters_send_bytes[0]);
+                buffer_cursor += filters_send_bytes[0];
+
+                // output
+                memcpy(buffer_cursor, output, filters_send_bytes[1]);
+                buffer_cursor += filters_send_bytes[1];
+
                 for (int i = 0; i < n_filters; ++i)
                 {
-                    memcpy(buffer_cursor, filters[i], filters_send_bytes[i]);
-                    buffer_cursor += filters_send_bytes[i];
-
-                    *buffer_cursor++ = '\0';
+                    memcpy(buffer_cursor, filters[i], filters_send_bytes[i + 2]);
+                    buffer_cursor += filters_send_bytes[i + 2];
                 }
 
                 if (write(fifo, buffer, send_bytes) == -1)
@@ -331,7 +340,7 @@ transform(const char * const input, const char * const output, const char * cons
 
 
 int
-main(int32_t argc, const char * const argv[])
+main(int argc, const char * const argv[])
 {
     if (argc > 1)
     {
@@ -358,7 +367,7 @@ main(int32_t argc, const char * const argv[])
                     break;
             
                 default:
-                    error = transform(argv[2], argv[3], &argv[4], argc - 4);
+                    error = transform(argv[2], argv[3], &argv[4], (uint32_t) argc - 4);
             }          
         }
 

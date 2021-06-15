@@ -9,7 +9,8 @@
     _(           INPUT_NOT_FOUND, "No input file found\n"                             )     \
     _(            MAIN_FIFO_FAIL, "Coudn't find server's pipe to communicate\n"       )     \
     _(        SERVER_NOT_RUNNING, "Server is not listening\n"                         )     \
-    _(          CANT_CREATE_FIFO, "Can't create pipe of communication\n"              )     \
+    _(          CANT_CREATE_FIFO, "Can't create fifo for communication\n"             )     \
+    _(     CANT_CREATE_ANON_PIPE, "Can't create anonymous fifo for communication\n"   )     \
     _(      COMMUNICATION_FAILED, "Something went wrong with the communication\n"     )     \
     _(          NO_OPPOSITE_CONN, "No openning connection from the other side\n"      )     \
     _(       CANT_CREATE_PROCESS, "Can't create process...\n"                         )     \

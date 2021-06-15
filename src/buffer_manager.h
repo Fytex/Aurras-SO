@@ -21,6 +21,12 @@ Error init_ReadBuffer(BufferRead * buffer_read, int file, ssize_t size);
 Error _read_at_least(BufferRead * buffer_read, ssize_t at_least);
 
 /*
+ * All defined functions in `buffer_manager.h` are here for inlining purposes
+ */
+
+
+
+/*
  *
  *  Force function inlining when there are enough bytes in the buffer (avoid unnecessary funciton calls)
  *
@@ -36,10 +42,20 @@ read_at_least(BufferRead * buffer_read, ssize_t at_least)
     return SUCCESS;
 }
 
+
+static void
+reset_ReadBuffer_file(BufferRead * const buffer_read, const int file)
+{
+    buffer_read->len = 0;
+    buffer_read->file = file;
+    buffer_read->cursor = buffer_read->buffer;
+}
+
+
 #define BUFFER_READ(T) static Error                            \
     T##_from_BufferRead(BufferRead * buffer_read, T * var)     \
     {                                                          \
-        Error error = read_at_least(buffer_read, sizeof (T));  \
+        Error error = read_at_least(buffer_read, sizeof (T)); printf("Does error: %d\n", error); \
         if (error == SUCCESS)                                  \
         {                                                      \
             T ** ptr_cursor = (T **) &buffer_read->cursor;     \

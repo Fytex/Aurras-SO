@@ -15,8 +15,9 @@
     _(          NO_OPPOSITE_CONN, "No openning connection from the other side\n"      )     \
     _(       CANT_CREATE_PROCESS, "Can't create process...\n"                         )     \
     _(            CLIENT_TIMEOUT, "Client took too much time to send data\n"          )     \
-    _(    CLIENT_CORRUPTED_DATA, "Client sent corrupted data\n"                       )     \
-    _(        FILTER_NOT_EXISTS, "Filter given by the client doesn't exist"           )
+    _(     CLIENT_CORRUPTED_DATA, "Client sent corrupted data\n"                      )     \
+    _(         FILTER_NOT_EXISTS, "Filter given by the client doesn't exist"          )     \
+    _(        FILTER_EXCEEDS_MAX, "A specific filter exceeds the maxiumum allowed\n"  )
 
 #define GENERATE_ENUM(ENUM, _) ENUM,
 

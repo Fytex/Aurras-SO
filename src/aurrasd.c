@@ -265,13 +265,17 @@ sigalrm_handler(int signum)
 inline static Error
 connect_main_fifo(int * fifo)
 {
+    if ((*fifo = open(MAIN_FIFO, O_RDONLY | O_CLOEXEC)) != -1) // O_CLOEXEC avoids children to inherit
+        return SUCCESS;
+
+    return CANT_CONNECT_FIFO;
+}
+
+inline static Error
+first_connect_main_fifo(int * fifo)
+{
     if (access(MAIN_FIFO, R_OK) == 0 || mkfifo(MAIN_FIFO, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH) != -1) // 0666
-    {
-        if ((*fifo = open(MAIN_FIFO, O_RDONLY)) != -1)
-            return SUCCESS;
-        else
-            return CANT_CONNECT_FIFO;
-    }
+        return connect_main_fifo(fifo);
     
     return CANT_CREATE_FIFO;
 }
@@ -425,6 +429,7 @@ status(const char * const fifo_str)
 
     write(1, buffer_write.buffer, buffer_write.len);
     write(fifo, buffer_write.buffer, buffer_write.len); // verificar se funfa
+    close(fifo);
     return SUCCESS;
 }
 
@@ -493,6 +498,8 @@ run_task(const Task * const task)
     if (len == 1)
     {
         puts("fork");
+        signal(SIGCHLD, last_sigchld_handler); // catch this process
+
         switch (fork())
         {
             case -1:
@@ -524,6 +531,8 @@ run_task(const Task * const task)
 
         if (pipe(array_pipes[0]) == -1)
             return CANT_CREATE_ANON_PIPE;
+        
+        signal(SIGCHLD, SIG_IGN); // Ignore all childs' processes. Later we will catch only the last one to get the result
         
         switch (fork())
         {
@@ -578,6 +587,8 @@ run_task(const Task * const task)
             }
         }
 
+        signal(SIGCHLD, last_sigchld_handler); // catch this last process
+
         switch (fork())
         {
             case -1:
@@ -598,6 +609,8 @@ run_task(const Task * const task)
             default:      
                 close(array_pipes[len - 2][0]);                    
         }
+
+        free(array_pipes);
     }
 
     return SUCCESS;
@@ -770,6 +783,13 @@ transform(const char * const fifo_str, ssize_t total_bytes)
                                     if (strcmp(buffer_read.cursor, filters[i].name) == 0)
                                     {
                                         ++table_count_filters[i];
+
+                                        if (table_count_filters[i] > filters[i].max)
+                                        {
+                                            error = FILTER_EXCEEDS_MAX;
+                                            break;
+                                        }
+
                                         if (size == len)
                                         {
                                             puts("realloc");
@@ -842,9 +862,11 @@ transform(const char * const fifo_str, ssize_t total_bytes)
         error = NOT_ENOUGH_MEMORY;
 
     if (error != SUCCESS) {
-        if (error == INPUT_NOT_FOUND) 1;
+        if (error == INPUT_NOT_FOUND) error = SUCCESS; // handle error
             // Do something
-        else if (error == FILTER_NOT_EXISTS) 1;
+        else if (error == FILTER_NOT_EXISTS) error = SUCCESS; // handle error
+            // Do something
+        else if (error == FILTER_EXCEEDS_MAX) error = SUCCESS; // handle error
             // Do something
 
         close(fifo);
@@ -883,7 +905,7 @@ run(const char * const configs_file, const char * const filters_folder)
 
     if (error == SUCCESS)
     {
-        error = connect_main_fifo(&main_fifo);
+        error = first_connect_main_fifo(&main_fifo);
 
         if (error == SUCCESS)
         {
@@ -892,21 +914,27 @@ run(const char * const configs_file, const char * const filters_folder)
 
             while (error == SUCCESS)
             {
-                error = u32_from_BufferRead(&buffer_read, &client_pid);
-                printf("PID: %d\n", client_pid);
+                if ((error = u32_from_BufferRead(&buffer_read, &client_pid)) == SUCCESS)
+                    error = u32_from_BufferRead(&buffer_read, &total_bytes);
+
+                printf("Error: %d | PID: %d\n", error, client_pid);
+
                 if (error == NO_OPPOSITE_CONN) {
-                    error = SUCCESS; // error handle (reset)
+                    close(main_fifo);
+                    error = connect_main_fifo(&main_fifo); // This way we can avoid active waiting
+                    if (error == SUCCESS)
+                        reset_ReadBuffer_file(&buffer_read, main_fifo);
+
                     continue; // if no clients then it will restart the loop. If this error happens on the next functions than it is a serious problem... Better shutdown the server than mess it up
                 }
                 else if (error != SUCCESS)
                     break;
-                
-                error = u32_from_BufferRead(&buffer_read, &total_bytes);
-                if (error != SUCCESS)
-                    break;
 
                 error = parse_execute_task(client_pid, total_bytes);
+                puts("Finished");
             }
+
+            free(buffer_read.buffer);
 
             delete_main_fifo();
         }
@@ -925,7 +953,6 @@ main(int argc, char * argv[])
         Error error;
         
         signal(SIGINT, sigint_handler);
-        //signal(SIGCHLD, sigchld_handler);
         signal(SIGALRM, sigalrm_handler);
         siginterrupt(SIGALRM, 1); // Alarm's signal will no longer restart `read` function
 

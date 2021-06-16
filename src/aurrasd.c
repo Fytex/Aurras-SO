@@ -221,7 +221,10 @@ void last_sigchld_handler(int signum)
                 }
                 else
                 {
+                    u8 value = 3;
+                    write(new_task->fifo, &value, sizeof (u8));
                     fputs(error_msg(error), stderr);
+                    close(new_task->fifo);
                     exit(1);
                 }
             }

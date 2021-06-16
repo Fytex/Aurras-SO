@@ -218,7 +218,6 @@ transform(const char * const input, const char * const output, const char * cons
     int fifo;
     int8_t status;
     ssize_t bytes_read;
-    int has_error;
 
     // No need to send an invalid message to the server since it has some costs...
     if (access(input, F_OK) == -1)
@@ -293,9 +292,8 @@ transform(const char * const input, const char * const output, const char * cons
 
                 while ((bytes_read = read(fifo, buffer, send_bytes * sizeof (char))) > 0)
                 {
-                    has_error = 0;
 
-                    for (int i = 0; !has_error && i < bytes_read; ++i)
+                    for (int i = 0; i < bytes_read; ++i)
                     {
                         status = buffer[i];
                     
@@ -315,7 +313,6 @@ transform(const char * const input, const char * const output, const char * cons
                             
                             default:
                                 printf("Error: %s\n", &buffer[1]);
-                                has_error = 1;
 
                         }
                     }

@@ -52,7 +52,7 @@ create_connection(char ** const ext_fifo_str, uint32_t send_bytes)
         if (fifo_str != NULL)
         {
 
-            snprintf(fifo_str, fifo_str_len, "%s%d", TMP_FOLDER, pid); // Using same function to garantee same code
+            snprintf(fifo_str, fifo_str_len + 1, "%s%d", TMP_FOLDER, pid); // Using same function to garantee same code
 
             if (access(fifo_str, R_OK | W_OK) == 0 || mkfifo(fifo_str, S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH) != -1) // 0666
             {
@@ -201,6 +201,8 @@ ask_status(void)
         close(fifo);
     }
     
+    // unlink is safe because it will only delete if no more processes are using it
+    unlink(fifo_str);
     free(fifo_str);
     return SUCCESS;
 

@@ -905,7 +905,7 @@ transform(const char * const fifo_str, ssize_t total_bytes)
 }
 
 static Error
-parse_execute_task(int client_pid, ssize_t total_bytes)
+parse_execute_task(pid_t client_pid, ssize_t total_bytes)
 {
     Error error = SUCCESS;
     ssize_t fifo_str_len = STRLEN(TMP_FOLDER) + snprintf(NULL, 0, "%d", client_pid);
@@ -913,7 +913,7 @@ parse_execute_task(int client_pid, ssize_t total_bytes)
     if(fifo_str == NULL)
         return NOT_ENOUGH_MEMORY;
 
-    snprintf(fifo_str, fifo_str_len, "%s%d", TMP_FOLDER, client_pid); // Using same function to garantee same code
+    snprintf(fifo_str, fifo_str_len + 1, "%s%d", TMP_FOLDER, client_pid); // Using same function to garantee same code
 
     error = (total_bytes == 0) ? status(fifo_str) : transform(fifo_str, total_bytes);
 

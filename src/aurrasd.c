@@ -92,6 +92,11 @@ free_configs(void)
 void
 free_task(Task * const task)
 {
+    free(task->input);
+    free(task->output);
+    free(task->ordered_filters);
+    free(task->table_count_filters);
+    close(task->fifo);
 }
 
 Task *
@@ -144,7 +149,7 @@ void last_sigchld_handler(int signum)
     }
 
 
-    while ((pid = waitpid(-1, &status, WNOHANG)) != -1) // Use of a while for race signals
+    while ((pid = waitpid(-1, &status, WNOHANG)) > 0) // Use of a while for race signals
     {
         Task * task = find_and_remove_task_by_last_pid(pid);
         const uint32_t * const table_count_filters = task->table_count_filters;
@@ -208,7 +213,8 @@ void last_sigchld_handler(int signum)
             previous_new_task = new_task;
             new_task = new_task->next;
         }
-        
+        u8 value = 2;
+        write(task->fifo, &value, sizeof (u8));
         free_task(task);
     }
 }
@@ -539,21 +545,22 @@ run_task(Task * task)
         /*
          * Use of a double fork to avoid waiting for zombies
          */
-        signal(SIGCHLD, SIGHUP); // All childs will be stacked which requires the server to wait for them
+        signal(SIGCHLD, SIG_DFL); // All childs will be stacked which requires the server to wait for them
 
         switch ((pid = fork()))
         {
             case -1:
-                return CANT_CREATE_PROCESS;
+                _exit(CANT_CREATE_PROCESS);
             
             case 0:
+                close(last_pipe[0]);
 
                 if (len > 2) // if len == 2 then we just use one pipe which will be the last one
                 {
                     array_pipes = malloc((len - 2) * sizeof (int[2]));
 
                     if (pipe(array_pipes[0]) == -1)
-                        return CANT_CREATE_ANON_PIPE;
+                        _exit(CANT_CREATE_ANON_PIPE);
                 
                 }
                 else
@@ -565,7 +572,7 @@ run_task(Task * task)
                     case -1:
                         close(array_pipes[0][0]);
                         close(array_pipes[0][1]);
-                        return CANT_CREATE_PROCESS;
+                        _exit(CANT_CREATE_PROCESS);
                     
                     case 0:
                         close(array_pipes[0][0]);
@@ -624,7 +631,8 @@ run_task(Task * task)
 
                 _exit(0);
             default:
-                waitpid(pid, &status, NULL);
+                close(last_pipe[1]);
+                waitpid(pid, &status, 0);
                 signal(SIGCHLD, last_sigchld_handler); // replace the signal to the one we want
                 last_sigchld_handler(0); // We don't use the value so it doesn't matter. Call this function in case there are zombies waiting for a response
                 // Verificar status
@@ -652,7 +660,7 @@ run_task(Task * task)
                 _exit(1);
 
             default:
-                task->last_filter_pid = pid; // garantee we can handle it on signal
+                task->last_filter_pid = pid;
                 
                 close(last_pipe[0]);
                 close(last_pipe[1]);                   
@@ -767,7 +775,7 @@ transform(const char * const fifo_str, ssize_t total_bytes)
 {
     Error error;
     BufferRead buffer_read;
-    int fifo = open(fifo_str, O_RDONLY);
+    int fifo = open(fifo_str, O_RDONLY | O_CLOEXEC); // O_CLOEXEC avoids children to inherit
 
     printf("transform\n");
 
@@ -892,7 +900,14 @@ transform(const char * const fifo_str, ssize_t total_bytes)
                             printf("Error: %d\n", error);
 
                             if (error == SUCCESS)
-                                error = create_task_from_filters_array(input, output, table_count_filters, ordered_filters, len, fifo);
+                            {
+                                close(fifo);
+                                fifo = open(fifo_str, O_WRONLY | O_CLOEXEC); // O_CLOEXEC avoids children to inherit
+                                if (fifo != -1)
+                                    error = create_task_from_filters_array(input, output, table_count_filters, ordered_filters, len, fifo);
+                                else
+                                    error = CANT_CONNECT_FIFO;
+                            }
 
                             printf("Error: %d\n", error);
                             if (error != SUCCESS)
@@ -928,7 +943,11 @@ transform(const char * const fifo_str, ssize_t total_bytes)
     else
         error = CLIENT_EXCEEDS_SIZE;
 
-    if (error != SUCCESS) {
+    if (error != SUCCESS && error != CANT_CONNECT_FIFO) {
+
+        u8 value = 3;
+        write(fifo, &value, sizeof (u8));
+
         if (error == INPUT_NOT_FOUND || error == CLIENT_EXCEEDS_SIZE ||
             error == FILTER_EXCEEDS_MAX || error == FILTER_NOT_EXISTS )
         {
@@ -937,8 +956,6 @@ transform(const char * const fifo_str, ssize_t total_bytes)
             bufferwrite.
             */
             error = SUCCESS; // handle error
-            u8 value = 2;
-            write(fifo, &value, sizeof (u8));
         }
 
         close(fifo);

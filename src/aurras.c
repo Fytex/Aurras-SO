@@ -308,6 +308,10 @@ transform(const char * const input, const char * const output, const char * cons
                             case 1:
                                 puts("Processing");
                                 break;
+
+                            case 2:
+                                puts("Finished");
+                                break;
                             
                             default:
                                 printf("Error: %s\n", &buffer[1]);

@@ -524,8 +524,7 @@ run_task(Task * task)
                 _exit(1);
             
             default:
-                task->last_filter_pid = pid; // garantee we can handle it on signal
-                signal(SIGCHLD, last_sigchld_handler); // catch this last process
+                task->last_filter_pid = pid;
         }
     }
     else
@@ -540,6 +539,8 @@ run_task(Task * task)
         /*
          * Use of a double fork to avoid waiting for zombies
          */
+        signal(SIGCHLD, SIGHUP); // All childs will be stacked which requires the server to wait for them
+
         switch ((pid = fork()))
         {
             case -1:
@@ -624,6 +625,8 @@ run_task(Task * task)
                 _exit(0);
             default:
                 waitpid(pid, &status, NULL);
+                signal(SIGCHLD, last_sigchld_handler); // replace the signal to the one we want
+                last_sigchld_handler(0); // We don't use the value so it doesn't matter. Call this function in case there are zombies waiting for a response
                 // Verificar status
             
         }
@@ -650,7 +653,6 @@ run_task(Task * task)
 
             default:
                 task->last_filter_pid = pid; // garantee we can handle it on signal
-                signal(SIGCHLD, last_sigchld_handler); // catch this last process
                 
                 close(last_pipe[0]);
                 close(last_pipe[1]);                   
@@ -772,7 +774,7 @@ transform(const char * const fifo_str, ssize_t total_bytes)
     if (fifo == -1)
         return CANT_CONNECT_FIFO;
     
-    if (total_bytes > CLIENT_MAX_SIZE)
+    if (total_bytes <= CLIENT_MAX_SIZE)
     {
     
         error = init_ReadBuffer(&buffer_read, fifo, total_bytes);
@@ -938,13 +940,6 @@ transform(const char * const fifo_str, ssize_t total_bytes)
             u8 value = 2;
             write(fifo, &value, sizeof (u8));
         }
-            // Do something
-        else if (error == FILTER_NOT_EXISTS) error = SUCCESS; // handle error
-            // Do something
-        else if (error == FILTER_EXCEEDS_MAX) error = SUCCESS; // handle error
-            // Do something
-        else if (error == CLIENT_EXCEEDS_SIZE) error = SUCCESS; // handle error
-            // Do something
 
         close(fifo);
     }
@@ -1030,6 +1025,7 @@ main(int argc, char * argv[])
         Error error;
         
         signal(SIGINT, sigint_handler);
+        signal(SIGCHLD, last_sigchld_handler);
         signal(SIGALRM, sigalrm_handler);
         siginterrupt(SIGALRM, 1); // Alarm's signal will no longer restart `read` function
 

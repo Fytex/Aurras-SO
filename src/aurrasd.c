@@ -78,6 +78,10 @@ static Filter * filters;
 static uint32_t num_filters = 0;
 static int ALARM_INTERRUPT;
 
+
+static Error run_task(Task * task);
+
+
 void
 delete_main_fifo(void)
 {
@@ -89,14 +93,13 @@ free_configs(void)
 {
 }
 
-void
+static inline void
 free_task(Task * const task)
 {
     free(task->input);
     free(task->output);
     free(task->ordered_filters);
     free(task->table_count_filters);
-    close(task->fifo);
 }
 
 Task *
@@ -124,12 +127,6 @@ find_and_remove_task_by_last_pid(pid_t pid)
     return task;
 }
 
-void init_sigchld_handler(int signum)
-{
-
-}
-
-
 /*
  * Advantages:
  *   - Avoid accumulating zombie's processes when waiting for data in fifo
@@ -153,6 +150,10 @@ void last_sigchld_handler(int signum)
     {
         Task * task = find_and_remove_task_by_last_pid(pid);
         const uint32_t * const table_count_filters = task->table_count_filters;
+
+        u8 value = 2;
+        write(task->fifo, &value, sizeof (u8));
+        close(task->fifo);
 
         for (uint32_t i = 0; i < num_filters; ++i)
         {
@@ -204,13 +205,21 @@ void last_sigchld_handler(int signum)
                 if (manage_tasks.queue_end_tasks == new_task)
                     manage_tasks.queue_end_tasks = previous_new_task;
 
-                if (manage_tasks.end_tasks)
+
+                if (manage_tasks.end_tasks == NULL)
+                    manage_tasks.begin_tasks = new_task;
+                else
                     manage_tasks.end_tasks->next = new_task;
                 
                 manage_tasks.end_tasks = new_task;
 
-                Error error = run_task(task);
-                if (error != SUCCESS)
+                Error error = run_task(new_task);
+                if (error == SUCCESS)
+                {
+                    u8 value = 1;
+                    write(new_task->fifo, &value, sizeof (u8));
+                }
+                else
                 {
                     fputs(error_msg(error), stderr);
                     exit(1);
@@ -220,49 +229,17 @@ void last_sigchld_handler(int signum)
             previous_new_task = new_task;
             new_task = new_task->next;
         }
-        u8 value = 2;
-        write(task->fifo, &value, sizeof (u8));
+
         free_task(task);
     }
 }
-/*
-void 
-sigchld_handler(int signum)
+
+void init_sigchld_handler(int signum)
 {
-    pid_t pid;
-    int status;
 
-    Child * children = child_processes.children;
-    int32_t last_idx = child_processes.last_idx;
-    int32_t filter_num = -1;
-    int32_t current;
-
-
-    while ((pid = waitpid(-1, &status, WNOHANG)) != -1) // Use of a while for race signals
-    {
-        for (int32_t i = 0; i <= last_idx; ++i)
-        {
-            if (children[i].pid == pid)
-            {
-                children[i].pid = -1;
-                filter_num = children[i].filter;
-                //free(children[i].cmd);
-
-                if (i == last_idx)
-                    --child_processes.last_idx;
-
-                break; 
-            }
-        }
-        
-        assert(filter_num >= 0);
-
-        current = --(filters[filter_num].current);
-
-        assert(current >= 0);
-    }
 }
-*/
+
+
 
 void
 sigint_handler(int signum)
@@ -448,59 +425,7 @@ status(const char * const fifo_str)
     return SUCCESS;
 }
 
-/*
-static Error
-check_task_can_run(const Task * const task, int * result)
-{
-    Filter filter;
-    Filter * filters = filters; // bring it locally;
-    uint32_t num_filters = num_filters; // bring it locally;
 
-    
-    // IF it's the last then we don't need to check each task before
- 
-    if (task->id == manage_tasks.queue_end_tasks->id)
-    {
-
-        
-    }
-    else
-    {
-        uint32_t * temp_filters_waiting = calloc(num_filters, sizeof (uint32_t));
-        if (temp_filters_waiting == NULL)
-            return NOT_ENOUGH_MEMORY;
-        
-        uint32_t * ordered_filters = task->ordered_filters;
-        
-        Task * pre_task = manage_tasks.begin_tasks;
-        
-        while (pre_task->id != task->id)
-        {
-            for (uint32_t i = 0; i < num_filters; ++i)
-            {
-                temp_filters_waiting[i] += pre_task->ordered_filters[i];
-            }
-
-            pre_task = pre_task->next;
-        }
-
-        int can_run = 1;
-
-        for (uint32_t i = 0; can_run && i < num_filters; ++i)
-        {
-            filter = filters[i];
-
-            if (temp_filters_waiting[i] > filter.max - filter.current)
-                can_run = 0;
-        }
-
-        free(temp_filters_waiting);
-        *result = can_run;
-    }
-
-    return SUCCESS;
-}
-*/
 static Error
 run_task(Task * task)
 {
@@ -603,10 +528,8 @@ run_task(Task * task)
                 for(uint32_t i = 1; i < len - 1; ++i)
                 {
                     if (i < len - 2)
-                    {
-                        close(last_pipe[1]);
                         pipe(array_pipes[i]);
-                    }
+
                     else
                         array_pipes[i][1] = last_pipe[1];
 
@@ -616,6 +539,9 @@ run_task(Task * task)
                             return CANT_CREATE_PROCESS;
 
                         case 0:
+                            if (i < len - 2)
+                                close(last_pipe[1]);
+
                             close(array_pipes[i][0]);
 
                             dup2(array_pipes[i-1][0], STDIN_FILENO); 
@@ -686,19 +612,19 @@ add_run_task(Task * const task)
     uint32_t * table_count_filters = task->table_count_filters;
 
     Filter filter;
-    u8 go_to_queue = 0;
+    u8 can_run = 1;
 
-    for (uint32_t i = 0 ; i < num_filters && !go_to_queue; ++i)
+    for (uint32_t i = 0 ; i < num_filters && can_run; ++i)
     {
         filter = filters[i];
 
         if (filter.max - filter.current < filter.waiting + table_count_filters[i])
-            go_to_queue = 1; // Not enough resources. Either being in use or booked
+            can_run = 0; // Not enough resources. Either being in use or booked
     }
 
     Task * last_task;
 
-    if (go_to_queue)
+    if (!can_run)
     {
         last_task = manage_tasks.queue_end_tasks;
 
@@ -736,7 +662,7 @@ add_run_task(Task * const task)
 
     // if it's an error then it must be server's fault not the clients' fault
     if (error == SUCCESS)
-            write(task->fifo, &go_to_queue, 1); // Don't care about this result
+            write(task->fifo, &can_run, sizeof (u8)); // Don't care about this result
 
     return error;
 }
@@ -1055,6 +981,7 @@ main(int argc, char * argv[])
         signal(SIGINT, sigint_handler);
         signal(SIGCHLD, last_sigchld_handler);
         signal(SIGALRM, sigalrm_handler);
+        signal(SIGPIPE, SIG_IGN); // Ignore if client kills while server is communicating
         siginterrupt(SIGALRM, 1); // Alarm's signal will no longer restart `read` function
 
         error = run(argv[1], argv[2]);

@@ -117,7 +117,7 @@ ask_status(void)
                 u32_from_BufferRead(&buffer_read, &n_filters) == SUCCESS)
             {
 
-                for (int32_t i = 0; i < n_tasks; ++i)
+                for (uint32_t i = 0; i < n_tasks; ++i)
                 {
                     error = u32_from_BufferRead(&buffer_read, &num_task);
 

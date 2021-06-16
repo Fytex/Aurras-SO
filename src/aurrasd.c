@@ -570,12 +570,13 @@ run_task(Task * task)
                 switch (fork())
                 {
                     case -1:
-                        close(array_pipes[0][0]);
                         close(array_pipes[0][1]);
                         _exit(CANT_CREATE_PROCESS);
                     
                     case 0:
                         close(array_pipes[0][0]);
+                        if (len > 2)
+                            close(last_pipe[1]);
 
                         file = open(task->input, O_RDONLY);
                         dup2(file, STDIN_FILENO);
@@ -595,12 +596,12 @@ run_task(Task * task)
                 for(uint32_t i = 1; i < len - 1; ++i)
                 {
                     if (i < len - 2)
-                        pipe(array_pipes[i]);
-                    else
                     {
-                        array_pipes[i][0] = last_pipe[0];
-                        array_pipes[i][1] = last_pipe[1];
+                        close(last_pipe[1]);
+                        pipe(array_pipes[i]);
                     }
+                    else
+                        array_pipes[i][1] = last_pipe[1];
 
                     switch (fork())
                     {

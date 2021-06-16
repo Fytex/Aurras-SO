@@ -208,6 +208,13 @@ void last_sigchld_handler(int signum)
                     manage_tasks.end_tasks->next = new_task;
                 
                 manage_tasks.end_tasks = new_task;
+
+                Error error = run_task(task);
+                if (error != SUCCESS)
+                {
+                    fputs(error_msg(error), stderr);
+                    exit(1);
+                }
             }
 
             previous_new_task = new_task;
@@ -720,6 +727,9 @@ add_run_task(Task * const task)
                 last_task->next = task;
             
             manage_tasks.end_tasks = task;
+
+            for (uint32_t i = 0; i < num_filters; ++i)
+                filters[i].current += table_count_filters[i];
         }
     }
 

@@ -93,8 +93,10 @@ buffer_to_BufferWrite(BufferWrite * buffer_write, const void * const buffer, ssi
     }
 
 #define u32 uint32_t
+#define u8 uint8_t
 
 BUFFER_READ(u32) BUFFER_WRITE(u32)
+                 BUFFER_WRITE(u8)
 
 #undef BUFFER_READ
 #undef BUFFER_WRITE

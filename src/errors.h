@@ -16,8 +16,9 @@
     _(       CANT_CREATE_PROCESS, "Can't create process...\n"                         )     \
     _(            CLIENT_TIMEOUT, "Client took too much time to send data\n"          )     \
     _(     CLIENT_CORRUPTED_DATA, "Client sent corrupted data\n"                      )     \
-    _(         FILTER_NOT_EXISTS, "Filter given by the client doesn't exist"          )     \
-    _(        FILTER_EXCEEDS_MAX, "A specific filter exceeds the maxiumum allowed\n"  )
+    _(         FILTER_NOT_EXISTS, "Client gave a nonexistent filter\n"                )     \
+    _(        FILTER_EXCEEDS_MAX, "A specific filter exceeds the maxiumum allowed\n"  )     \
+    _(       CLIENT_EXCEEDS_SIZE, "Client's message exceeds the maximum size\n"       )
 
 #define GENERATE_ENUM(ENUM, _) ENUM,
 

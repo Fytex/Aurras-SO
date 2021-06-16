@@ -310,7 +310,7 @@ transform(const char * const input, const char * const output, const char * cons
                                 break;
                             
                             default:
-                                printf("Error, unknown filter: %s\n", &buffer[1]);
+                                printf("Error: %s\n", &buffer[1]);
                                 has_error = 1;
 
                         }

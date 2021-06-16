@@ -16,6 +16,8 @@
 #define MAIN_FIFO "tmp/FIFO_MAIN"
 #define TMP_FOLDER "tmp/"
 #define PROGRAM "aurrasd"
+#define CLIENT_TIMEOUT_TIME 10
+#define CLIENT_MAX_SIZE UINT32_MAX
 
 #define STRLEN(s) (sizeof(s)/sizeof(s[0])) - sizeof(s[0])
 
@@ -97,7 +99,7 @@ find_and_remove_task_by_last_pid(pid_t pid)
 {
     Task * previous = NULL;
     Task * task = manage_tasks.begin_tasks;
-
+    
     while (task != NULL && task->last_filter_pid != pid)
     {
         previous = task;
@@ -160,7 +162,7 @@ void last_sigchld_handler(int signum)
         while (any_filter_available && new_task != NULL)
         {
             const uint32_t * const new_table_count_filters = new_task->table_count_filters;
-            int stay_in_queue = 0;
+            u8 stay_in_queue = 0;
 
             any_filter_available = 0;
             for (uint32_t i = 0; i < num_filters; ++i)
@@ -487,7 +489,7 @@ check_task_can_run(const Task * const task, int * result)
 }
 */
 static Error
-run_task(Task * const task)
+run_task(Task * task)
 {
     puts("run_task");
     Filter filter;
@@ -499,7 +501,6 @@ run_task(Task * const task)
     if (len == 1)
     {
         puts("fork");
-        signal(SIGCHLD, last_sigchld_handler); // catch this process
 
         switch ((pid = fork()))
         {
@@ -523,81 +524,121 @@ run_task(Task * const task)
                 _exit(1);
             
             default:
-                task->last_filter_pid = pid;
+                task->last_filter_pid = pid; // garantee we can handle it on signal
+                signal(SIGCHLD, last_sigchld_handler); // catch this last process
         }
     }
     else
     {
-        int (* array_pipes)[2] = malloc((task->len_filters - 1) * sizeof (int[2]));
+        int (* array_pipes)[2];
+        int last_pipe[2];
+        int status;
 
-        if (pipe(array_pipes[0]) == -1)
-            return CANT_CREATE_ANON_PIPE;
-        
-        signal(SIGCHLD, SIG_IGN); // Ignore all childs' processes. Later we will catch only the last one to get the result
-        
-        switch (fork())
+        if (pipe(last_pipe) == -1)
+            return CANT_CREATE_ANON_PIPE;        
+
+        /*
+         * Use of a double fork to avoid waiting for zombies
+         */
+        switch ((pid = fork()))
         {
             case -1:
-                close(array_pipes[0][0]);
-                close(array_pipes[0][1]);
                 return CANT_CREATE_PROCESS;
             
             case 0:
-                close(array_pipes[0][0]);
 
-                file = open(task->input, O_RDONLY);
-                dup2(file, STDIN_FILENO);
-                close(file);
+                if (len > 2) // if len == 2 then we just use one pipe which will be the last one
+                {
+                    array_pipes = malloc((len - 2) * sizeof (int[2]));
 
-                dup2(array_pipes[0][1], STDOUT_FILENO);
-                close(array_pipes[0][1]);
+                    if (pipe(array_pipes[0]) == -1)
+                        return CANT_CREATE_ANON_PIPE;
+                
+                }
+                else
+                    array_pipes = &last_pipe;
 
-                filter = filters[ordered_filters[0]];
-                execlp(filter.path, filter.name, NULL);
-                _exit(1);
+
+                switch (fork())
+                {
+                    case -1:
+                        close(array_pipes[0][0]);
+                        close(array_pipes[0][1]);
+                        return CANT_CREATE_PROCESS;
+                    
+                    case 0:
+                        close(array_pipes[0][0]);
+
+                        file = open(task->input, O_RDONLY);
+                        dup2(file, STDIN_FILENO);
+                        close(file);
+
+                        dup2(array_pipes[0][1], STDOUT_FILENO);
+                        close(array_pipes[0][1]);
+
+                        filter = filters[ordered_filters[0]];
+                        execlp(filter.path, filter.name, NULL);
+                        _exit(1);
+                    
+                    default:
+                        close(array_pipes[0][1]);
+                }
+
+                for(uint32_t i = 1; i < len - 1; ++i)
+                {
+                    if (i < len - 2)
+                        pipe(array_pipes[i]);
+                    else
+                    {
+                        array_pipes[i][0] = last_pipe[0];
+                        array_pipes[i][1] = last_pipe[1];
+                    }
+
+                    switch (fork())
+                    {
+                        case -1:
+                            return CANT_CREATE_PROCESS;
+
+                        case 0:
+                            close(array_pipes[i][0]);
+
+                            dup2(array_pipes[i-1][0], STDIN_FILENO); 
+                            close(array_pipes[i-1][0]);
+
+                            dup2(array_pipes[i][1], STDOUT_FILENO);
+                            close(array_pipes[i][1]);     
+
+                            filter = filters[ordered_filters[i]];  
+                            execlp(filter.path, filter.name, NULL);
+                            _exit(1);
+
+                        default:      
+                            close(array_pipes[i-1][0]);
+                            close(array_pipes[i][1]);
+                    }
+                }
             
+                if (len > 2)
+                    free(array_pipes);
+
+                _exit(0);
             default:
-                close(array_pipes[0][1]);
+                waitpid(pid, &status, NULL);
+                // Verificar status
+            
         }
 
-        for(uint32_t i = 1; i < len - 1; ++i)
-        {
-            pipe(array_pipes[i]);
-
-            switch (fork())
-            {
-                case -1:
-                    return CANT_CREATE_PROCESS;
-
-                case 0:
-                    close(array_pipes[i][0]);
-
-                    dup2(array_pipes[i-1][0], STDIN_FILENO); 
-                    close(array_pipes[i-1][0]);
-
-                    dup2(array_pipes[i][1], STDOUT_FILENO);
-                    close(array_pipes[i][1]);     
-
-                    filter = filters[ordered_filters[i]];  
-                    execlp(filter.path, filter.name, NULL);
-                    _exit(1);
-
-                default:      
-                    close(array_pipes[i-1][0]);
-                    close(array_pipes[i][1]);
-            }
-        }
-
-        signal(SIGCHLD, last_sigchld_handler); // catch this last process
-
+        /*
+         * Last fork will become a zombie so the server can wait for them
+         */
         switch ((pid = fork()))
         {
             case -1:
                 return CANT_CREATE_PROCESS;
 
             case 0:
-                dup2(array_pipes[len - 2][0], STDIN_FILENO);
-                close(array_pipes[len - 2][0]);
+                dup2(last_pipe[0], STDIN_FILENO);
+                close(last_pipe[0]);
                 
                 file = open(task->output, O_WRONLY | O_CREAT | O_TRUNC,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); // 0666
                 dup2(file, STDOUT_FILENO);
@@ -608,11 +649,12 @@ run_task(Task * const task)
                 _exit(1);
 
             default:
-                task->last_filter_pid = pid;
-                close(array_pipes[len - 2][0]);                    
+                task->last_filter_pid = pid; // garantee we can handle it on signal
+                signal(SIGCHLD, last_sigchld_handler); // catch this last process
+                
+                close(last_pipe[0]);
+                close(last_pipe[1]);                   
         }
-
-        free(array_pipes);
     }
 
     return SUCCESS;
@@ -626,7 +668,7 @@ add_run_task(Task * const task)
     uint32_t * table_count_filters = task->table_count_filters;
 
     Filter filter;
-    int go_to_queue = 0;
+    u8 go_to_queue = 0;
 
     for (uint32_t i = 0 ; i < num_filters && !go_to_queue; ++i)
     {
@@ -636,9 +678,11 @@ add_run_task(Task * const task)
             go_to_queue = 1; // Not enough resources. Either being in use or booked
     }
 
+    Task * last_task;
+
     if (go_to_queue)
     {
-        Task * last_task = manage_tasks.queue_end_tasks;
+        last_task = manage_tasks.queue_end_tasks;
 
         if (last_task == NULL)
             manage_tasks.queue_begin_tasks = task;
@@ -652,7 +696,21 @@ add_run_task(Task * const task)
             filters[i].waiting += table_count_filters[i];
     }
     else
+    {
         error = run_task(task);
+
+        if (error == SUCCESS)
+        {
+            last_task = manage_tasks.end_tasks;
+
+            if (last_task == NULL)
+                manage_tasks.begin_tasks = task;
+            else
+                last_task->next = task;
+            
+            manage_tasks.end_tasks = task;
+        }
+    }
 
 
     // if it's an error then it must be server's fault not the clients' fault
@@ -675,7 +733,7 @@ create_task_from_filters_array(char * const input, char * const output,
     *task = (Task)
     {
         .fifo = fifo,
-        .id = manage_tasks.next_id++,
+        .id = manage_tasks.next_id++, // It's not UB. Source: GNU C Manual A.1 Basics of Integer Overflow
         .last_filter_pid = -1,
         .len_filters = len,
         .next = NULL,
@@ -714,161 +772,178 @@ transform(const char * const fifo_str, ssize_t total_bytes)
     if (fifo == -1)
         return CANT_CONNECT_FIFO;
     
-
-    error = init_ReadBuffer(&buffer_read, fifo, total_bytes);
-    if (error == SUCCESS)
+    if (total_bytes > CLIENT_MAX_SIZE)
     {
-        ALARM_INTERRUPT = 0;
-        alarm(10); // Avoid waiting
-        error = read_at_least(&buffer_read, total_bytes);
-        alarm(0); // reset alarm
-
-        write(1, buffer_read.buffer, total_bytes);
-        printf("\n\n%lu - %lu\n", total_bytes, buffer_read.len);
-
-        if (ALARM_INTERRUPT == 1)
-            error = CLIENT_TIMEOUT;
-        else if (error == SUCCESS) // last char must be '\0' otherwise we can have trouble with buffer overrun
+    
+        error = init_ReadBuffer(&buffer_read, fifo, total_bytes);
+        if (error == SUCCESS)
         {
-            
-            if (((char *) buffer_read.buffer)[buffer_read.len - 1] != '\0')
-                error = CLIENT_CORRUPTED_DATA;
-            else
+            ALARM_INTERRUPT = 0;
+            alarm(CLIENT_TIMEOUT_TIME); // Avoid waiting
+            error = read_at_least(&buffer_read, total_bytes);
+            alarm(0); // reset alarm
+
+            write(1, buffer_read.buffer, total_bytes);
+            printf("\n\n%lu - %lu\n", total_bytes, buffer_read.len);
+
+            if (ALARM_INTERRUPT == 1)
+                error = CLIENT_TIMEOUT;
+            else if (error == SUCCESS) // last char must be '\0' otherwise we can have trouble with buffer overrun
             {
-                ssize_t size = 8;
-                uint32_t * ordered_filters = malloc(size * sizeof (uint32_t));
-                uint32_t * new_buffer;
-                ssize_t len = 0;
-
-                if (ordered_filters != NULL)
+                
+                if (((char *) buffer_read.buffer)[buffer_read.len - 1] != '\0')
+                    error = CLIENT_CORRUPTED_DATA;
+                else
                 {
-                    uint32_t * table_count_filters = calloc(num_filters, sizeof (uint32_t));
+                    ssize_t size = 8;
+                    uint32_t * ordered_filters = malloc(size * sizeof (uint32_t));
+                    uint32_t * new_buffer;
+                    ssize_t len = 0;
 
-                    if (table_count_filters)
+                    if (ordered_filters != NULL)
                     {
+                        uint32_t * table_count_filters = calloc(num_filters, sizeof (uint32_t));
 
-                        char * input = NULL, * output = NULL;
-
-                        do
+                        if (table_count_filters)
                         {
-                            if (input == NULL)
+
+                            char * input = NULL, * output = NULL;
+
+                            do
                             {
-                                if (access(buffer_read.cursor, R_OK) != 0)
-                                {
-                                    error = INPUT_NOT_FOUND;
-                                    break;
-                                }
-                                input = strdup(buffer_read.cursor);
                                 if (input == NULL)
                                 {
-                                    error = NOT_ENOUGH_MEMORY;
-                                    break;
-                                }
-                            }
-                            else if (output == NULL)
-                            {
-                                output = strdup(buffer_read.cursor);
-                                if (output == NULL)
-                                {
-                                    error = NOT_ENOUGH_MEMORY;
-                                    break;
-                                }
-                            }
-                            else
-                            {
-                                uint32_t i;
-                                puts(buffer_read.cursor);
-                                printf("%d\n", num_filters);
-                                for (i = 0; i < num_filters; ++i)
-                                {
-                                    puts(filters[i].name);
-                                    if (strcmp(buffer_read.cursor, filters[i].name) == 0)
+                                    if (access(buffer_read.cursor, R_OK) != 0)
                                     {
-                                        ++table_count_filters[i];
-
-                                        if (table_count_filters[i] > filters[i].max)
+                                        error = INPUT_NOT_FOUND;
+                                        break;
+                                    }
+                                    input = strdup(buffer_read.cursor);
+                                    if (input == NULL)
+                                    {
+                                        error = NOT_ENOUGH_MEMORY;
+                                        break;
+                                    }
+                                }
+                                else if (output == NULL)
+                                {
+                                    output = strdup(buffer_read.cursor);
+                                    if (output == NULL)
+                                    {
+                                        error = NOT_ENOUGH_MEMORY;
+                                        break;
+                                    }
+                                }
+                                else
+                                {
+                                    uint32_t i;
+                                    puts(buffer_read.cursor);
+                                    printf("%d\n", num_filters);
+                                    for (i = 0; i < num_filters; ++i)
+                                    {
+                                        puts(filters[i].name);
+                                        if (strcmp(buffer_read.cursor, filters[i].name) == 0)
                                         {
-                                            error = FILTER_EXCEEDS_MAX;
-                                            break;
-                                        }
+                                            ++table_count_filters[i];
 
-                                        if (size == len)
-                                        {
-                                            puts("realloc");
-                                            size *= 2;
-                                            new_buffer = realloc(ordered_filters, size * sizeof (uint32_t));
-                                            if (new_buffer != NULL)
+                                            if (table_count_filters[i] > filters[i].max)
                                             {
-                                                ordered_filters = new_buffer;
-                                                ordered_filters[len++] = i;
+                                                error = FILTER_EXCEEDS_MAX;
+                                                break;
+                                            }
+
+                                            if (size == len)
+                                            {
+                                                puts("realloc");
+                                                size *= 2;
+                                                new_buffer = realloc(ordered_filters, size * sizeof (uint32_t));
+                                                if (new_buffer != NULL)
+                                                {
+                                                    ordered_filters = new_buffer;
+                                                    ordered_filters[len++] = i;
+                                                }
+                                                else
+                                                    error = NOT_ENOUGH_MEMORY;
                                             }
                                             else
-                                                error = NOT_ENOUGH_MEMORY;
-                                        }
-                                        else
-                                            ordered_filters[len++] = i;
+                                                ordered_filters[len++] = i;
 
+                                            break;
+                                        }
+                                    }
+
+                                    if (error != SUCCESS)
+                                        break;
+
+                                    if (i == num_filters)
+                                    {
+                                        error = FILTER_NOT_EXISTS;
                                         break;
                                     }
                                 }
 
-                                if (error != SUCCESS)
-                                    break;
+                                size = strlen(buffer_read.cursor) + 1;
+                                buffer_read.cursor += size;
+                                total_bytes -= size;
+                            } while (total_bytes > 0);
 
-                                if (i == num_filters)
-                                {
-                                    error = FILTER_NOT_EXISTS;
-                                    break;
-                                }
-                            }
+                            printf("Error: %d\n", error);
 
-                            size = strlen(buffer_read.cursor) + 1;
-                            buffer_read.cursor += size;
-                            total_bytes -= size;
-                        } while (total_bytes > 0);
+                            if (error == SUCCESS)
+                                error = create_task_from_filters_array(input, output, table_count_filters, ordered_filters, len, fifo);
 
-                        printf("Error: %d\n", error);
-
-                        if (error == SUCCESS)
-                            error = create_task_from_filters_array(input, output, table_count_filters, ordered_filters, len, fifo);
-
-                        printf("Error: %d\n", error);
-                        if (error != SUCCESS)
-                        {
-                            if (input != NULL)
+                            printf("Error: %d\n", error);
+                            if (error != SUCCESS)
                             {
-                                free(input);
+                                if (input != NULL)
+                                {
+                                    free(input);
 
-                                if (output != NULL)
-                                    free(output);
+                                    if (output != NULL)
+                                        free(output);
+                                }
+                                free(table_count_filters);
                             }
-                            free(table_count_filters);
+    
                         }
-   
+                        else
+                            error = NOT_ENOUGH_MEMORY;
+
+                        if (error != SUCCESS)
+                            free(ordered_filters);
                     }
                     else
                         error = NOT_ENOUGH_MEMORY;
-
-                    if (error != SUCCESS)
-                        free(ordered_filters);
                 }
-                else
-                    error = NOT_ENOUGH_MEMORY;
+                
             }
-            
-        }
 
-        free(buffer_read.buffer);
+            free(buffer_read.buffer);
+        }
+        else
+            error = NOT_ENOUGH_MEMORY;
     }
     else
-        error = NOT_ENOUGH_MEMORY;
+        error = CLIENT_EXCEEDS_SIZE;
 
     if (error != SUCCESS) {
-        if (error == INPUT_NOT_FOUND) error = SUCCESS; // handle error
+        if (error == INPUT_NOT_FOUND || error == CLIENT_EXCEEDS_SIZE ||
+            error == FILTER_EXCEEDS_MAX || error == FILTER_NOT_EXISTS )
+        {
+            /*
+            BufferWrite buffer_write;
+            bufferwrite.
+            */
+            error = SUCCESS; // handle error
+            u8 value = 2;
+            write(fifo, &value, sizeof (u8));
+        }
             // Do something
         else if (error == FILTER_NOT_EXISTS) error = SUCCESS; // handle error
             // Do something
         else if (error == FILTER_EXCEEDS_MAX) error = SUCCESS; // handle error
+            // Do something
+        else if (error == CLIENT_EXCEEDS_SIZE) error = SUCCESS; // handle error
             // Do something
 
         close(fifo);
@@ -880,7 +955,7 @@ transform(const char * const fifo_str, ssize_t total_bytes)
 static Error
 parse_execute_task(int client_pid, ssize_t total_bytes)
 {
-    Error error;
+    Error error = SUCCESS;
     ssize_t fifo_str_len = STRLEN(TMP_FOLDER) + snprintf(NULL, 0, "%d", client_pid);
     char * fifo_str = malloc((fifo_str_len + 1) * sizeof (char));
     if(fifo_str == NULL)

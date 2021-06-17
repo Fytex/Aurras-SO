@@ -345,6 +345,9 @@ transform(const char * const input, const char * const output, const char * cons
 
                 }
 
+                if (error == NO_OPPOSITE_CONN) // finished
+                    error = SUCCESS;
+
                 close(fifo);
             }
             else

@@ -7,7 +7,7 @@
 
 
 Error
-init_ReadBuffer(BufferRead * buffer_read, int file, ssize_t size)
+init_ReadBuffer(BufferRead * const buffer_read, int file, ssize_t size)
 {
     void * buffer = malloc(size == 0 ? PAGE_SIZE : size);
 
@@ -33,7 +33,7 @@ init_ReadBuffer(BufferRead * buffer_read, int file, ssize_t size)
  *  Buffer is always a multiple of PAGE_SIZE
  */
 Error
-_read_at_least(BufferRead * buffer_read, ssize_t at_least)
+_read_at_least(BufferRead * const buffer_read, ssize_t at_least)
 {
     ssize_t bytes_read;
     void * buffer = buffer_read->buffer;
@@ -100,5 +100,46 @@ _read_at_least(BufferRead * buffer_read, ssize_t at_least)
     }
 
     buffer_read->len = len;
+    return SUCCESS;
+}
+
+
+Error
+init_WriteBuffer(BufferWrite * const buffer_write, int file, ssize_t size)
+{
+    if (size == 0)
+        size = PAGE_SIZE;
+
+    void * buffer = malloc(size);
+
+    if (buffer == NULL)
+        return NOT_ENOUGH_MEMORY;
+
+    *buffer_write = (BufferWrite)
+    {
+        .buffer = buffer,
+        .cap = size,
+        .file = file,
+        .len = 0
+    };
+
+    return SUCCESS;
+}
+
+
+Error
+buffer_to_BufferWrite(BufferWrite * const buffer_write, const void * const buffer, ssize_t size)
+{
+    ssize_t len = buffer_write->len;
+
+    if (len + size > buffer_write->cap)
+    {
+        Error error = flush_BufferWrite(buffer_write);
+        if (error != SUCCESS)
+            return error;
+    }
+
+    memcpy(buffer_write->buffer + len, buffer, size);
+    buffer_write->len += size;
     return SUCCESS;
 }

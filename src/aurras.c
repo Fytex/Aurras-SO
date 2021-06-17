@@ -97,7 +97,7 @@ ask_status(void)
     char * fifo_str;
     int fifo;
     pid_t server_pid;
-    uint32_t n_tasks, n_filters, num_task;
+    uint32_t total_tasks_waiting, total_tasks_running, n_filters, num_task;
     uint32_t running, max;
     ssize_t bytes_left, bytes_written;
 
@@ -112,44 +112,56 @@ ask_status(void)
         error = init_ReadBuffer(&buffer_read, fifo, 0);
         if (error == SUCCESS)
         {
-            if (u32_from_BufferRead(&buffer_read, (uint32_t *) &server_pid) == SUCCESS &&
-                u32_from_BufferRead(&buffer_read, &n_tasks) == SUCCESS &&
-                u32_from_BufferRead(&buffer_read, &n_filters) == SUCCESS)
+            if ((error = u32_from_BufferRead(&buffer_read, (uint32_t *) &server_pid)) == SUCCESS &&
+                (error = u32_from_BufferRead(&buffer_read, &total_tasks_running)) == SUCCESS &&
+                (error = u32_from_BufferRead(&buffer_read, &total_tasks_waiting)) == SUCCESS &&
+                (error = u32_from_BufferRead(&buffer_read, &n_filters)) == SUCCESS)
             {
+                uint32_t total = total_tasks_running;
 
-                for (uint32_t i = 0; i < n_tasks; ++i)
+                if (total_tasks_running > 0)
+                    puts("Running Tasks:");
+
+                for (int double_cycle = 0; double_cycle < 2; ++double_cycle)
                 {
-                    error = u32_from_BufferRead(&buffer_read, &num_task);
-
-                    if (error != SUCCESS)
-                        break;
-
-                    printf("Task #%" PRId32 ": ", num_task);
-
-                    do
+                    for (uint32_t i = 0; i < total; ++i)
                     {
-                        error = read_at_least(&buffer_read, 0);
+                        error = u32_from_BufferRead(&buffer_read, &num_task);
+
                         if (error != SUCCESS)
                             break;
 
-                        bytes_left = buffer_read.len - (buffer_read.cursor - buffer_read.buffer);
+                        printf("Task #%" PRId32 ": transform ", num_task);
 
-                        /*
-                            If last character is '\0' then bytes_left will stay with value 1
-                        */
-                        bytes_written = fprintf(stdout, "%.*s", (int) bytes_left, (char *) buffer_read.cursor);
+                        do
+                        {
+                            error = read_at_least(&buffer_read, 0);
+                            if (error != SUCCESS)
+                                break;
 
-                        buffer_read.cursor += bytes_written;
+                            bytes_left = buffer_read.len - (buffer_read.cursor - buffer_read.buffer);
+
+                            /*
+                                If last character is '\0' then bytes_left will stay with value 1
+                            */
+                            bytes_written = fprintf(stdout, "%.*s", (int) bytes_left, (char *) buffer_read.cursor);
+
+                            buffer_read.cursor += bytes_written;
+                        }
+                        while (bytes_written == bytes_left);
+
+                        if (error == SUCCESS)
+                            ++buffer_read.cursor; // '\0' from string
+                        else
+                            break;
+
+                        puts("");
+                        
                     }
-                    while (bytes_written == bytes_left);
 
-                    if (error == SUCCESS)
-                        ++buffer_read.cursor; // '\0' from string
-                    else
-                        break;
-
-                    puts("");
-                    
+                    total = total_tasks_waiting;
+                    if (total_tasks_waiting > 0)
+                        puts("Waiting Tasks:");
                 }
 
                 if (error == SUCCESS)

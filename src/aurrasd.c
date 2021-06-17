@@ -19,6 +19,9 @@
 #define CLIENT_TIMEOUT_TIME 10
 #define CLIENT_MAX_SIZE UINT32_MAX
 
+#define MSG_WAITING_TO_RUNNING "[Task started running right now]"
+#define MSG_RUNNING_TO_FINISH "[Task finished right now]"
+
 #define STRLEN(s) (sizeof(s)/sizeof(s[0])) - sizeof(s[0])
 
 #define PAGE_SIZE 4096
@@ -82,15 +85,22 @@ static int ALARM_INTERRUPT;
 static Error run_task(Task * task);
 
 
-void
+static inline void
 delete_main_fifo(void)
 {
-
+    unlink(MAIN_FIFO);
 }
 
-void
+static void
 free_configs(void)
 {
+    for (uint32_t i = 0; i < num_filters; ++i)
+    {
+        free(filters[i].name);
+        free(filters[i].path);
+    }
+
+    free(filters);
 }
 
 static inline void
@@ -102,7 +112,7 @@ free_task(Task * const task)
     free(task->table_count_filters);
 }
 
-Task *
+static Task *
 find_and_remove_task_by_last_pid(pid_t pid)
 {
     Task * previous = NULL;
@@ -132,7 +142,8 @@ find_and_remove_task_by_last_pid(pid_t pid)
  *   - Avoid accumulating zombie's processes when waiting for data in fifo
  *   - Doesn't waste CPU time
  */
-void last_sigchld_handler(int signum)
+static void
+last_sigchld_handler(int signum)
 {
     pid_t pid;
     int status;
@@ -221,10 +232,14 @@ void last_sigchld_handler(int signum)
                 }
                 else
                 {
-                    u8 value = 3;
-                    write(new_task->fifo, &value, sizeof (u8));
+                    BufferWrite buffer_write;
+                    init_WriteBuffer(&buffer_write, new_task->fifo, sizeof (u8) + sizeof (uint32_t));
+                    
+                    u8_to_BufferWrite(&buffer_write, 3);
+                    u32_to_BufferWrite(&buffer_write, error);
+                    close_BufferWrite(&buffer_write);
+
                     fputs(error_msg(error), stderr);
-                    close(new_task->fifo);
                     exit(1);
                 }
             }
@@ -237,21 +252,21 @@ void last_sigchld_handler(int signum)
     }
 }
 
-void init_sigchld_handler(int signum)
-{
-
-}
 
 
-
-void
+static void
 sigint_handler(int signum)
 {
     delete_main_fifo();
+
+    while (manage_tasks.begin_tasks != NULL)
+        pause();
+
     free_configs();
+    exit(0);
 }
 
-void
+static void
 sigalrm_handler(int signum)
 {
     ALARM_INTERRUPT = 1;
@@ -381,6 +396,7 @@ load_configs(const char * const configs_file, const char * const filters_folder)
     return error;
 }
 
+
 static Error
 status(const char * const fifo_str)
 {
@@ -388,44 +404,111 @@ status(const char * const fifo_str)
     if (fifo == -1)
         return CANT_CONNECT_FIFO;
     
+    Error error;
     BufferWrite buffer_write;
-    uint32_t len;
-    int32_t buffer[100000];
-    buffer_write.buffer = buffer;
-    buffer_write.cap = 10000;
-    buffer_write.len = 0;
-    Task * task = manage_tasks.queue_begin_tasks;
-    u32_to_BufferWrite(&buffer_write, getpid()); // verificar se funfa
-    u32_to_BufferWrite(&buffer_write, 0); // alterar
-    u32_to_BufferWrite(&buffer_write, num_filters);
-    for (int i = 0; i < 0; ++i)
-    {
-        u32_to_BufferWrite(&buffer_write, task->id);
-        buffer_to_BufferWrite(&buffer_write, "./aurras", strlen("./aurras"));
-        len = task->len_filters;
-        for (int j = 0; j < len; ++j)
-        {
-            buffer_to_BufferWrite(&buffer_write, " ", sizeof (char)); // Just the space
-            buffer_to_BufferWrite(&buffer_write, filters[task->ordered_filters[j]].name, strlen(filters[task->ordered_filters[j]].name));
-        }
-        buffer_to_BufferWrite(&buffer_write, "", sizeof (char));
+    Task * task;
 
+    uint32_t total_tasks_waiting = 0;
+    uint32_t total_tasks_running = 0;
+
+    task = manage_tasks.begin_tasks;
+    while (task != NULL)
+    {
+        ++total_tasks_running;
         task = task->next;
     }
-    
-    len = num_filters;
 
-    for (int i = 0; i < len; ++i)
+    task = manage_tasks.queue_begin_tasks;
+    while (task != NULL)
     {
-        u32_to_BufferWrite(&buffer_write, filters[i].current);
-        u32_to_BufferWrite(&buffer_write, filters[i].max);
-        buffer_to_BufferWrite(&buffer_write, filters[i].name, strlen(filters[i].name) + 1);
+        ++total_tasks_waiting;
+        task = task->next;
     }
 
-    write(1, buffer_write.buffer, buffer_write.len);
-    write(fifo, buffer_write.buffer, buffer_write.len); // verificar se funfa
-    close(fifo);
-    return SUCCESS;
+    error = init_WriteBuffer(&buffer_write, fifo, 0);
+    if (error == SUCCESS)
+    {
+        if ((error = u32_to_BufferWrite(&buffer_write, getpid())) == SUCCESS &&
+            (error = u32_to_BufferWrite(&buffer_write, total_tasks_running)) == SUCCESS &&
+            (error = u32_to_BufferWrite(&buffer_write, total_tasks_waiting)) == SUCCESS &&
+            (error = u32_to_BufferWrite(&buffer_write, num_filters)) == SUCCESS)
+        {
+
+            uint32_t total = total_tasks_running;
+            char * msg = MSG_RUNNING_TO_FINISH;
+            ssize_t msg_size = sizeof (MSG_RUNNING_TO_FINISH);
+            task = manage_tasks.begin_tasks;
+        
+            for (int double_cycle = 0; double_cycle < 2; ++double_cycle)
+            {
+                // Can't use while (task != NULL) because meanwhile could be modified
+                for (uint32_t i = 0; error == SUCCESS && i < total; ++i)
+                {
+                    if (task == NULL)
+                    {
+                        error = u32_to_BufferWrite(&buffer_write, -1); // -1 will become the biggest unsigned value
+                        if (error == SUCCESS)
+                            error = buffer_to_BufferWrite(&buffer_write, msg, msg_size); // this will probably never occur
+                    }
+                    else
+                    {
+                        error = u32_to_BufferWrite(&buffer_write, task->id);
+
+                        uint32_t * ordered_filters = task->ordered_filters;
+                        
+                        if (error == SUCCESS)
+                        {
+                            
+                            error = buffer_to_BufferWrite(&buffer_write, task->input, strlen(task->input) + 1);
+                            
+                            if (error == SUCCESS)
+                                error = buffer_to_BufferWrite(&buffer_write, task->output, strlen(task->output) + 1);
+                        }
+
+                        uint32_t len = task->len_filters;
+
+                        for(uint32_t n = 0; error == SUCCESS && n < len; ++n)
+                        {
+                            char * filter_name = filters[ordered_filters[n]].name;
+                            error = buffer_to_BufferWrite(&buffer_write, filter_name, strlen(filter_name) + 1);
+                        }
+
+                        if (error == SUCCESS)
+                            error = buffer_to_BufferWrite(&buffer_write, "", sizeof (""));
+
+                        task = task->next;
+                    }
+                }
+                total = total_tasks_waiting;
+                msg = MSG_WAITING_TO_RUNNING;
+                msg_size = sizeof (MSG_WAITING_TO_RUNNING);
+                task = manage_tasks.queue_begin_tasks;
+            }
+
+            for (int i = 0; error == SUCCESS && i < num_filters; ++i)
+            {
+                Filter filter = filters[i];
+
+                error = u32_to_BufferWrite(&buffer_write, filter.current);
+                if (error == SUCCESS)
+                {
+                    error = u32_to_BufferWrite(&buffer_write, filter.max);
+                    if (error == SUCCESS)
+                        error = buffer_to_BufferWrite(&buffer_write, filter.name, strlen(filter.name) + 1);
+                }
+            }
+        }
+
+        if (error != SUCCESS)
+            free_WriteBuffer(&buffer_write);
+    }
+    else
+        close(fifo);
+    
+    if (error == SUCCESS)
+        error = close_BufferWrite(&buffer_write);
+
+    return error;
 }
 
 
@@ -875,7 +958,7 @@ transform(const char * const fifo_str, ssize_t total_bytes)
                 
             }
 
-            free(buffer_read.buffer);
+            free_ReadBuffer(&buffer_read);
         }
         else
             error = NOT_ENOUGH_MEMORY;
@@ -885,21 +968,20 @@ transform(const char * const fifo_str, ssize_t total_bytes)
 
     if (error != SUCCESS && error != CANT_CONNECT_FIFO) {
 
-        u8 value = 3;
-        write(fifo, &value, sizeof (u8));
+        BufferWrite buffer_write;
+        init_WriteBuffer(&buffer_write, fifo, 0);
 
-        if (error == INPUT_NOT_FOUND || error == CLIENT_EXCEEDS_SIZE ||
-            error == FILTER_EXCEEDS_MAX || error == FILTER_NOT_EXISTS )
-        {
-            /*
-            BufferWrite buffer_write;
-            bufferwrite.
-            */
+        u8_to_BufferWrite(&buffer_write, 3);
+        u32_to_BufferWrite(&buffer_write, error);
+
+        close_BufferWrite(&buffer_write);
+
+        if (error == INPUT_NOT_FOUND || error == CLIENT_EXCEEDS_SIZE || error == FILTER_EXCEEDS_MAX || error == FILTER_NOT_EXISTS )
             error = SUCCESS; // handle error
-        }
 
-        close(fifo);
     }
+    else
+        error = SUCCESS; // Either there was no error or couldn't connect to fifo which is not a server's problem
 
     return error;   
 }
@@ -963,7 +1045,7 @@ run(const char * const configs_file, const char * const filters_folder)
                 puts("Finished");
             }
 
-            free(buffer_read.buffer);
+            free_ReadBuffer(&buffer_read);
 
             delete_main_fifo();
         }

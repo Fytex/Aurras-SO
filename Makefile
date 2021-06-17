@@ -1,4 +1,4 @@
-all: server client
+all: folders server client
 	@echo "Bundle Finished"
 
 server: bin/aurrasd
@@ -25,8 +25,12 @@ obj/buffer_manager.o: src/buffer_manager.c
 obj/errors.o: src/errors.c
 	gcc -Wall -g -c src/errors.c -o obj/errors.o
 
+folders:
+	@mkdir -p tmp
+	@mkdir -p obj
+
 clean:
-	@rm -f obj/* tmp/* bin/*
+	@rm -f obj/* tmp/* bin/aurras bin/aurrasd
 	@echo "Cleaning Complete"
 
 test:

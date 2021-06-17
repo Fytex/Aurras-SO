@@ -581,7 +581,6 @@ run_task(Task * task)
     {
         int (* array_pipes)[2];
         int last_pipe[2];
-        int status;
 
         if (pipe(last_pipe) == -1)
             return CANT_CREATE_ANON_PIPE;        
@@ -679,7 +678,7 @@ run_task(Task * task)
                 _exit(0);
             default:
                 close(last_pipe[1]);
-                waitpid(pid, &status, 0);
+                waitpid(pid, NULL, 0);
                 signal(SIGCHLD, last_sigchld_handler); // replace the signal to the one we want
                 last_sigchld_handler(0); // We don't use the value so it doesn't matter. Call this function in case there are zombies waiting for a response
         }

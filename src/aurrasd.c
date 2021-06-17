@@ -259,7 +259,9 @@ sigint_handler(int signum)
 {
     delete_main_fifo();
 
-    while (manage_tasks.begin_tasks != NULL)
+    // Even though begin_tasks will be filled automatically by queue_begin_tasks, there is a chance to
+    // have begin_tasks empty and the queue not if we interupt (SIGINT) between the filling
+    while (manage_tasks.begin_tasks != NULL || manage_tasks.queue_begin_tasks != NULL)
         pause();
 
     free_configs();

@@ -70,22 +70,21 @@ _read_at_least(BufferRead * const buffer_read, ssize_t at_least)
     if (bytes_left == 0)
     {
         buffer_read->cursor = cursor = buffer;
-        buffer_read->len = 0;
+        buffer_read->len = len = 0;
     }
 
     else if (bytes_left <= cursor - buffer) // Memory can't overlap with memcpy
     {
         memcpy(buffer, cursor, bytes_left);
         buffer_read->cursor = cursor = buffer;
-        buffer_read->len = bytes_left;
+        buffer_read->len = len = bytes_left;
     }
     else if (at_least == 0 || (cursor - buffer) + at_least > cap) // If it execeds the size of the buffer or we want any block. Then we get rid of the junk
     {
         memmove(buffer, cursor, bytes_left); // O(N) operation -> Heavy
         buffer_read->cursor = cursor = buffer;
-        buffer_read->len = bytes_left;
+        buffer_read->len = len = bytes_left;
     }
-
 
     if (at_least == 0) // If not specified then we give the first block we receive
         at_least = 1;

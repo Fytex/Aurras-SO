@@ -4,6 +4,7 @@
 #include "errors.h"
 
 int ALARM_INTERRUPT = 0;
+int ACTIVE_ALARM = 0;
 
 
 Error
@@ -89,15 +90,18 @@ _read_at_least(BufferRead * const buffer_read, ssize_t at_least)
     if (at_least == 0) // If not specified then we give the first block we receive
         at_least = 1;
     
-    ALARM_INTERRUPT = 0;
-    alarm(CLIENT_TIMEOUT_TIME); // Avoid waiting
+    if (ACTIVE_ALARM)
+    {
+        ALARM_INTERRUPT = 0;
+        alarm(CLIENT_TIMEOUT_TIME); // Avoid waiting
+    }
     Error error = SUCCESS;
 
     while (error == SUCCESS && bytes_left < at_least)
     {
         bytes_read = read(file, buffer, cap - len);
 
-        if (ALARM_INTERRUPT == 1)
+        if (ACTIVE_ALARM && ALARM_INTERRUPT)
         {
             error = CLIENT_TIMEOUT;
             if (bytes_read > 0)
@@ -118,7 +122,8 @@ _read_at_least(BufferRead * const buffer_read, ssize_t at_least)
 
     }
 
-    alarm(0); // reset alarm
+    if (ACTIVE_ALARM)
+        alarm(0); // reset alarm
 
     buffer_read->len = len;
     return error;

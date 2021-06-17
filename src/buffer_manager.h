@@ -13,6 +13,7 @@
 #define PAGE_SIZE 4096
 
 extern int ALARM_INTERRUPT;
+extern int ACTIVE_ALARM;
 
 typedef struct
 {

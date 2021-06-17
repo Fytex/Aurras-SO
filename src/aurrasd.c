@@ -837,7 +837,7 @@ transform(const char * const fifo_str, ssize_t total_bytes)
                 alarm(0); // reset alarm
 
 
-                if (ALARM_INTERRUPT == 1)
+                if (ALARM_INTERRUPT)
                     error = CLIENT_TIMEOUT;
                 else if (error == SUCCESS) // last char must be '\0' otherwise we can have trouble with buffer overrun
                 {
@@ -1037,6 +1037,7 @@ run(const char * const configs_file, const char * const filters_folder)
 
             while (error == SUCCESS)
             {
+
                 if ((error = u32_from_BufferRead(&buffer_read, &client_pid)) == SUCCESS)
                     error = u32_from_BufferRead(&buffer_read, &total_bytes);
 
@@ -1050,8 +1051,12 @@ run(const char * const configs_file, const char * const filters_folder)
                 }
                 else if (error != SUCCESS)
                     break;
+                
+                ACTIVE_ALARM = 1; // Only need alarm when communicating in client's fifo
 
                 error = parse_execute_task(client_pid, total_bytes);
+
+                ACTIVE_ALARM = 0;
             }
 
             free_ReadBuffer(&buffer_read);

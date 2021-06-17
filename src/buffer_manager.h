@@ -1,6 +1,7 @@
 #ifndef BUFFER_MANAGER_H
 #define BUFFER_MANAGER_H
 
+#include <arpa/inet.h>
 #include <inttypes.h>
 #include <string.h>
 #include <assert.h>
@@ -52,14 +53,14 @@ reset_ReadBuffer_file(BufferRead * const buffer_read, const int file)
 }
 
 
-#define BUFFER_READ(T) static inline Error                     \
+#define BUFFER_READ(T, func) static inline Error               \
     T##_from_BufferRead(BufferRead * buffer_read, T * var)     \
     {                                                          \
         Error error = read_at_least(buffer_read, sizeof (T));  \
         if (error == SUCCESS)                                  \
         {                                                      \
             T ** ptr_cursor = (T **) &buffer_read->cursor;     \
-            *var = *(*ptr_cursor)++;                           \
+            *var = func(*(*ptr_cursor)++);                     \
         }                                                      \
                                                                \
         return error;                                          \
@@ -97,7 +98,7 @@ flush_BufferWrite(BufferWrite * buffer_write)
 }
 
 
-#define BUFFER_WRITE(T) static inline Error                      \
+#define BUFFER_WRITE(T, func) static inline Error                \
     T##_to_BufferWrite(BufferWrite * buffer_write, T var)        \
     {                                                            \
         if (buffer_write->len + sizeof (T) > buffer_write->cap)  \
@@ -107,7 +108,7 @@ flush_BufferWrite(BufferWrite * buffer_write)
                 return error;                                    \
         }                                                        \
         ssize_t len = buffer_write->len;                         \
-        *((T *) (buffer_write->buffer + len)) = var;             \
+        *((T *) (buffer_write->buffer + len)) = func(var);       \
         buffer_write->len += sizeof (T);                         \
         return SUCCESS;                                          \
     }
@@ -131,8 +132,8 @@ close_BufferWrite(BufferWrite * const buffer_write)
 #define u32 uint32_t
 #define u8 uint8_t
 
-BUFFER_READ(u32) BUFFER_WRITE(u32)
-                 BUFFER_WRITE(u8)
+BUFFER_READ(u32, ntohl) BUFFER_WRITE(u32, htonl)
+BUFFER_READ(u8, )  BUFFER_WRITE(u8, )
 
 #undef BUFFER_READ
 #undef BUFFER_WRITE

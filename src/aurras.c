@@ -58,8 +58,8 @@ create_connection(char ** const ext_fifo_str, uint32_t send_bytes)
             {
                 // The pid_t data type is a signed integer type which is capable of representing a process ID. In the GNU C Library, this is an int.
                 // int in *nix at the moment are always 2 or 4 bytes
-                data[0] = (uint32_t) pid;
-                data[1] = send_bytes;
+                data[0] = htonl((uint32_t) pid);
+                data[1] = htonl(send_bytes);
 
                 if (write(main_fifo, data, sizeof (data)) != -1)
                     *ext_fifo_str = fifo_str;
@@ -205,7 +205,7 @@ ask_status(void)
                     }
 
                     if (error == SUCCESS)
-                        printf("pid: %d", server_pid);
+                        printf("pid: %d\n", server_pid);
                 }
             }
             free(buffer_read.buffer);
@@ -230,9 +230,6 @@ transform(const char * const input, const char * const output, const char * cons
     unsigned char * buffer, * buffer_cursor;
     char * fifo_str;
     int fifo;
-    int8_t status;
-    ssize_t bytes_read;
-    int error_leaving;
 
     // No need to send an invalid message to the server since it has some costs...
     if (access(input, F_OK) == -1)
@@ -305,44 +302,48 @@ transform(const char * const input, const char * const output, const char * cons
             if ((fifo = open(fifo_str, O_RDONLY)) != -1)
             {
 
-                error_leaving = 0;
-
-                while (!error_leaving && (bytes_read = read(fifo, buffer, send_bytes * sizeof (char))) > 0)
+                BufferRead buffer_read =
                 {
+                    .buffer = buffer,
+                    .cap = send_bytes,
+                    .cursor = buffer,
+                    .file = fifo,
+                    .len = 0
+                };
 
-                    for (uint32_t i = 0; !error_leaving && i < bytes_read; ++i)
+                int error_leaving = 0;
+                u8 status;
+                u32 status_error;
+
+                while (!error_leaving && (error = u8_from_BufferRead(&buffer_read, &status)) == SUCCESS)
+                {
+          
+                    switch (status)
                     {
-                        status = buffer[i];
-                    
-                        switch (status)
-                        {
-                            case 0:
-                                puts("Pending");
-                                break;
-                            
-                            case 1:
-                                puts("Processing");
-                                break;
+                        case 0:
+                            puts("Pending");
+                            break;
+                        
+                        case 1:
+                            puts("Processing");
+                            break;
 
-                            case 2:
-                                puts("Finished");
-                                break;
-                            
-                            default:
-                                printf("Error: ");
-                                if (bytes_read >= sizeof (u8) + sizeof (uint32_t))
-                                    puts(error_msg(((uint32_t *) (buffer + 1))[1]));
-                                else // since it's at the beginning of the fifo we can be sure about it being written all at once
-                                    if ((bytes_read = read(fifo, buffer, sizeof (uint32_t))) >= sizeof (uint32_t))
-                                        puts(error_msg(((uint32_t *) buffer)[0]));
-                                error_leaving = 1;
+                        case 2:
+                            puts("Finished");
+                            break;
+                        
+                        default:
+                            printf("Error: ");
+                            if ((error = u32_from_BufferRead(&buffer_read, &status_error)) == SUCCESS)
+                                puts(error_msg((Error) status_error));
+                            else
+                                puts("Unknown");
 
-                        }
+                            error_leaving = 1;
+
                     }
-                }
 
-                if (bytes_read == -1)
-                    error = COMMUNICATION_FAILED;
+                }
 
                 close(fifo);
             }

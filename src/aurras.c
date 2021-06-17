@@ -58,7 +58,7 @@ create_connection(char ** const ext_fifo_str, uint32_t send_bytes)
             {
                 // The pid_t data type is a signed integer type which is capable of representing a process ID. In the GNU C Library, this is an int.
                 // int in *nix at the moment are always 2 or 4 bytes
-                data[0] = (int32_t) pid;
+                data[0] = (uint32_t) pid;
                 data[1] = send_bytes;
 
                 if (write(main_fifo, data, sizeof (data)) != -1)
@@ -166,7 +166,7 @@ ask_status(void)
 
                 if (error == SUCCESS)
                 {
-                    for (int32_t i = 0; i < n_filters; ++i)
+                    for (uint32_t i = 0; i < n_filters; ++i)
                     {
                         error = u32_from_BufferRead(&buffer_read, &running);
                         if (error != SUCCESS)
@@ -232,6 +232,7 @@ transform(const char * const input, const char * const output, const char * cons
     int fifo;
     int8_t status;
     ssize_t bytes_read;
+    int error_leaving;
 
     // No need to send an invalid message to the server since it has some costs...
     if (access(input, F_OK) == -1)
@@ -247,7 +248,7 @@ transform(const char * const input, const char * const output, const char * cons
     send_bytes += (filters_send_bytes[0] = strlen(input) + 1);
     send_bytes += (filters_send_bytes[1] = strlen(output) + 1);
 
-    for (int i = 0; i < n_filters; ++i)
+    for (uint32_t i = 0; i < n_filters; ++i)
         send_bytes += (filters_send_bytes[i + 2] = strlen(filters[i]) + 1);
 
     error = create_connection(&fifo_str, send_bytes);
@@ -271,7 +272,7 @@ transform(const char * const input, const char * const output, const char * cons
                 memcpy(buffer_cursor, output, filters_send_bytes[1]);
                 buffer_cursor += filters_send_bytes[1];
 
-                for (int i = 0; i < n_filters; ++i)
+                for (uint32_t i = 0; i < n_filters; ++i)
                 {
                     memcpy(buffer_cursor, filters[i], filters_send_bytes[i + 2]);
                     buffer_cursor += filters_send_bytes[i + 2];
@@ -304,10 +305,12 @@ transform(const char * const input, const char * const output, const char * cons
             if ((fifo = open(fifo_str, O_RDONLY)) != -1)
             {
 
-                while ((bytes_read = read(fifo, buffer, send_bytes * sizeof (char))) > 0)
+                error_leaving = 0;
+
+                while (!error_leaving && (bytes_read = read(fifo, buffer, send_bytes * sizeof (char))) > 0)
                 {
 
-                    for (int i = 0; i < bytes_read; ++i)
+                    for (uint32_t i = 0; !error_leaving && i < bytes_read; ++i)
                     {
                         status = buffer[i];
                     
@@ -326,7 +329,13 @@ transform(const char * const input, const char * const output, const char * cons
                                 break;
                             
                             default:
-                                printf("Error: %s\n", &buffer[1]);
+                                printf("Error: ");
+                                if (bytes_read >= sizeof (u8) + sizeof (uint32_t))
+                                    puts(error_msg(((uint32_t *) (buffer + 1))[1]));
+                                else // since it's at the beginning of the fifo we can be sure about it being written all at once
+                                    if ((bytes_read = read(fifo, buffer, sizeof (uint32_t))) >= sizeof (uint32_t))
+                                        puts(error_msg(((uint32_t *) buffer)[0]));
+                                error_leaving = 1;
 
                         }
                     }

@@ -148,7 +148,7 @@ last_sigchld_handler(int signum)
     pid_t pid;
     int status;
 
-    int32_t * filters_available = malloc(num_filters * sizeof (uint32_t));
+    uint32_t * filters_available = malloc(num_filters * sizeof (uint32_t));
 
     if (filters_available == NULL)
     {
@@ -296,11 +296,11 @@ load_configs(const char * const configs_file, const char * const filters_folder)
     ssize_t bytes_read;
     char * buffer, * buffer_cursor;
     char * found;
-    int32_t size;
+    uint32_t size;
     Filter * filters_buffer, * filters_new_buffer;
     Filter filter;
 
-    int32_t total = 0;
+    uint32_t total = 0;
     Error error = SUCCESS;
     int file = open(configs_file, O_RDONLY);
 
@@ -459,10 +459,18 @@ status(const char * const fifo_str)
                         if (error == SUCCESS)
                         {
                             
-                            error = buffer_to_BufferWrite(&buffer_write, task->input, strlen(task->input) + 1);
+                            error = buffer_to_BufferWrite(&buffer_write, task->input, strlen(task->input));
                             
                             if (error == SUCCESS)
-                                error = buffer_to_BufferWrite(&buffer_write, task->output, strlen(task->output) + 1);
+                            {
+                                error = buffer_to_BufferWrite(&buffer_write, " ", strlen(" "));
+                                if (error == SUCCESS)
+                                {
+                                    error = buffer_to_BufferWrite(&buffer_write, task->output, strlen(task->output));
+                                    if (error == SUCCESS)
+                                        error = buffer_to_BufferWrite(&buffer_write, " ", strlen(" "));
+                                }
+                            }
                         }
 
                         uint32_t len = task->len_filters;
@@ -470,7 +478,9 @@ status(const char * const fifo_str)
                         for(uint32_t n = 0; error == SUCCESS && n < len; ++n)
                         {
                             char * filter_name = filters[ordered_filters[n]].name;
-                            error = buffer_to_BufferWrite(&buffer_write, filter_name, strlen(filter_name) + 1);
+                            error = buffer_to_BufferWrite(&buffer_write, filter_name, strlen(filter_name));
+                            if (error == SUCCESS)
+                                error = buffer_to_BufferWrite(&buffer_write, " ", strlen(" "));
                         }
 
                         if (error == SUCCESS)
@@ -485,7 +495,7 @@ status(const char * const fifo_str)
                 task = manage_tasks.queue_begin_tasks;
             }
 
-            for (int i = 0; error == SUCCESS && i < num_filters; ++i)
+            for (uint32_t i = 0; error == SUCCESS && i < num_filters; ++i)
             {
                 Filter filter = filters[i];
 
@@ -515,7 +525,6 @@ status(const char * const fifo_str)
 static Error
 run_task(Task * task)
 {
-    puts("run_task");
     Filter filter;
     uint32_t * ordered_filters = task->ordered_filters;
     uint32_t len = task->len_filters;
@@ -524,22 +533,18 @@ run_task(Task * task)
 
     if (len == 1)
     {
-        puts("fork");
-
         switch ((pid = fork()))
         {
             case -1:
                 return CANT_CREATE_PROCESS;
             
             case 0:
+                signal(SIGINT, SIG_IGN); // otherwise keyboard interuption will propagate
                 file = open(task->input, O_RDONLY);
-                printf("%d -> %s\n", file, task->input);
                 dup2(file, STDIN_FILENO);
                 close(file);
 
                 file = open(task->output, O_WRONLY | O_CREAT | O_TRUNC,  S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH); // 0666    
-                printf("%d -> %s\n", file, task->output);
-                printf("F: %d | %s | %s\n", ordered_filters[0], filters[ordered_filters[0]].path, filters[ordered_filters[0]].name);
                 dup2(file, STDOUT_FILENO);
                 close(file);
 
@@ -571,6 +576,7 @@ run_task(Task * task)
                 _exit(CANT_CREATE_PROCESS);
             
             case 0:
+                signal(SIGINT, SIG_IGN); // otherwise keyboard interuption will propagate
                 close(last_pipe[0]);
 
                 if (len > 2) // if len == 2 then we just use one pipe which will be the last one
@@ -668,6 +674,7 @@ run_task(Task * task)
                 return CANT_CREATE_PROCESS;
 
             case 0:
+                signal(SIGINT, SIG_IGN); // otherwise keyboard interuption will propagate
                 dup2(last_pipe[0], STDIN_FILENO);
                 close(last_pipe[0]);
                 
@@ -693,7 +700,6 @@ run_task(Task * task)
 static Error
 add_run_task(Task * const task)
 {
-    puts("add_run_task");
     Error error = SUCCESS;
     uint32_t * table_count_filters = task->table_count_filters;
 
@@ -776,17 +782,6 @@ create_task_from_filters_array(char * const input, char * const output,
         .output = output
     };
 
-    printf("create_task_from_filters_array\n");
-    puts(input);
-    puts(output);
-    for (uint32_t i = 0; i < len; ++i)
-        printf("%d-", ordered_filters[i]);
-    puts("");
-    
-    for (uint32_t i = 0; i < num_filters; ++i)
-        printf("%d,", table_count_filters[i]);
-    puts("");
-
     return add_run_task(task);
 
 }
@@ -799,8 +794,6 @@ transform(const char * const fifo_str, ssize_t total_bytes)
     Error error;
     BufferRead buffer_read;
     int fifo = open(fifo_str, O_RDONLY | O_CLOEXEC); // O_CLOEXEC avoids children to inherit
-
-    printf("transform\n");
 
     if (fifo == -1)
         return CANT_CONNECT_FIFO;
@@ -816,8 +809,6 @@ transform(const char * const fifo_str, ssize_t total_bytes)
             error = read_at_least(&buffer_read, total_bytes);
             alarm(0); // reset alarm
 
-            write(1, buffer_read.buffer, total_bytes);
-            printf("\n\n%lu - %lu\n", total_bytes, buffer_read.len);
 
             if (ALARM_INTERRUPT == 1)
                 error = CLIENT_TIMEOUT;
@@ -870,11 +861,8 @@ transform(const char * const fifo_str, ssize_t total_bytes)
                                 else
                                 {
                                     uint32_t i;
-                                    puts(buffer_read.cursor);
-                                    printf("%d\n", num_filters);
                                     for (i = 0; i < num_filters; ++i)
                                     {
-                                        puts(filters[i].name);
                                         if (strcmp(buffer_read.cursor, filters[i].name) == 0)
                                         {
                                             ++table_count_filters[i];
@@ -887,7 +875,6 @@ transform(const char * const fifo_str, ssize_t total_bytes)
 
                                             if (size == len)
                                             {
-                                                puts("realloc");
                                                 size *= 2;
                                                 new_buffer = realloc(ordered_filters, size * sizeof (uint32_t));
                                                 if (new_buffer != NULL)
@@ -920,7 +907,6 @@ transform(const char * const fifo_str, ssize_t total_bytes)
                                 total_bytes -= size;
                             } while (total_bytes > 0);
 
-                            printf("Error: %d\n", error);
 
                             if (error == SUCCESS)
                             {
@@ -932,7 +918,6 @@ transform(const char * const fifo_str, ssize_t total_bytes)
                                     error = CANT_CONNECT_FIFO;
                             }
 
-                            printf("Error: %d\n", error);
                             if (error != SUCCESS)
                             {
                                 if (input != NULL)
@@ -1028,8 +1013,6 @@ run(const char * const configs_file, const char * const filters_folder)
                 if ((error = u32_from_BufferRead(&buffer_read, &client_pid)) == SUCCESS)
                     error = u32_from_BufferRead(&buffer_read, &total_bytes);
 
-                printf("Error: %d | PID: %d\n", error, client_pid);
-
                 if (error == NO_OPPOSITE_CONN) {
                     close(main_fifo);
                     error = connect_main_fifo(&main_fifo); // This way we can avoid active waiting
@@ -1042,7 +1025,6 @@ run(const char * const configs_file, const char * const filters_folder)
                     break;
 
                 error = parse_execute_task(client_pid, total_bytes);
-                puts("Finished");
             }
 
             free_ReadBuffer(&buffer_read);
@@ -1070,7 +1052,7 @@ main(int argc, char * argv[])
         siginterrupt(SIGALRM, 1); // Alarm's signal will no longer restart `read` function
 
         error = run(argv[1], argv[2]);
-        printf("Error: %d\n", error);
+
         if (error != SUCCESS)
         {
             fputs(error_msg(error), stderr);

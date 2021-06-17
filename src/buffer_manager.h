@@ -55,7 +55,7 @@ reset_ReadBuffer_file(BufferRead * const buffer_read, const int file)
 #define BUFFER_READ(T) static inline Error                     \
     T##_from_BufferRead(BufferRead * buffer_read, T * var)     \
     {                                                          \
-        Error error = read_at_least(buffer_read, sizeof (T)); printf("Does error: %d\n", error); \
+        Error error = read_at_least(buffer_read, sizeof (T));  \
         if (error == SUCCESS)                                  \
         {                                                      \
             T ** ptr_cursor = (T **) &buffer_read->cursor;     \

@@ -311,11 +311,11 @@ transform(const char * const input, const char * const output, const char * cons
                     .len = 0
                 };
 
-                int error_leaving = 0;
+                int finished = 0;
                 u8 status;
                 u32 status_error;
 
-                while (!error_leaving && (error = u8_from_BufferRead(&buffer_read, &status)) == SUCCESS)
+                while (!finished && (error = u8_from_BufferRead(&buffer_read, &status)) == SUCCESS)
                 {
           
                     switch (status)
@@ -330,6 +330,7 @@ transform(const char * const input, const char * const output, const char * cons
 
                         case 2:
                             puts("Finished");
+                            finished = 1;
                             break;
                         
                         default:
@@ -339,13 +340,13 @@ transform(const char * const input, const char * const output, const char * cons
                             else
                                 puts("Unknown");
 
-                            error_leaving = 1;
+                            finished = 1;
 
                     }
 
                 }
 
-                if (error == NO_OPPOSITE_CONN) // finished
+                if (finished)
                     error = SUCCESS;
 
                 close(fifo);

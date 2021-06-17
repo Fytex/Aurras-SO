@@ -18,7 +18,8 @@
     _(     CLIENT_CORRUPTED_DATA, "Client sent corrupted data\n"                      )     \
     _(         FILTER_NOT_EXISTS, "Client gave a non-existent filter\n"               )     \
     _(        FILTER_EXCEEDS_MAX, "A specific filter exceeds the maxiumum allowed\n"  )     \
-    _(       CLIENT_EXCEEDS_SIZE, "Client's message exceeds the maximum size\n"       )
+    _(       CLIENT_EXCEEDS_SIZE, "Client's message exceeds the maximum size\n"       )     \
+    _(         TASK_HAD_PROBLEMS, "Task executable had unknown problems\n"            )
 
 #define GENERATE_ENUM(ENUM, _) ENUM,
 

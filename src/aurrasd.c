@@ -41,7 +41,7 @@ typedef struct Task
 
     uint32_t id;
     int fifo;
-    pid_t last_filter_pid; // -1 if not running
+    pid_t last_filter_pid;
 } Task;
 
 typedef struct
@@ -162,9 +162,24 @@ last_sigchld_handler(int signum)
         Task * task = find_and_remove_task_by_last_pid(pid);
         const uint32_t * const table_count_filters = task->table_count_filters;
 
-        u8 value = 2;
-        write(task->fifo, &value, sizeof (u8));
-        close(task->fifo);
+        if (WIFEXITED(status) && WEXITSTATUS(status) == 0)
+        {
+            u8 value = 2;
+            write(task->fifo, &value, sizeof (u8));
+            close(task->fifo);
+            
+        }
+        else
+        {
+            BufferWrite buffer_write;
+            init_WriteBuffer(&buffer_write, task->fifo, sizeof (u8) + sizeof (uint32_t));
+            
+            u8_to_BufferWrite(&buffer_write, 3);
+            u32_to_BufferWrite(&buffer_write, TASK_HAD_PROBLEMS);
+            close_BufferWrite(&buffer_write);
+        }
+
+        
 
         for (uint32_t i = 0; i < num_filters; ++i)
         {
@@ -667,8 +682,6 @@ run_task(Task * task)
                 waitpid(pid, &status, 0);
                 signal(SIGCHLD, last_sigchld_handler); // replace the signal to the one we want
                 last_sigchld_handler(0); // We don't use the value so it doesn't matter. Call this function in case there are zombies waiting for a response
-                // Verificar status
-            
         }
 
         /*

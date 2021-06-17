@@ -23,8 +23,6 @@
 
 #define STRLEN(s) (sizeof(s)/sizeof(s[0])) - sizeof(s[0])
 
-#define PAGE_SIZE 4096
-
 
 typedef struct Task
 {

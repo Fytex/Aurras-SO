@@ -3,8 +3,6 @@
 #include "buffer_manager.h"
 #include "errors.h"
 
-#define PAGE_SIZE 4096
-
 int ALARM_INTERRUPT = 0;
 
 

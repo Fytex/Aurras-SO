@@ -9,8 +9,10 @@
 
 #include "errors.h"
 
-extern int ALARM_INTERRUPT;
 #define CLIENT_TIMEOUT_TIME 10
+#define PAGE_SIZE 4096
+
+extern int ALARM_INTERRUPT;
 
 typedef struct
 {

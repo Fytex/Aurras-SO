@@ -11,7 +11,7 @@ bin/aurrasd: obj/aurrasd.o obj/buffer_manager.o obj/errors.o
 	gcc -g obj/aurrasd.o obj/buffer_manager.o obj/errors.o -o bin/aurrasd
 
 obj/aurrasd.o: src/aurrasd.c
-	gcc -Wall -g -c src/aurrasd.c -o obj/aurrasd.o
+	gcc -Wall -Wno-deprecated-declarations -g -c src/aurrasd.c -o obj/aurrasd.o
 
 bin/aurras: obj/aurras.o obj/buffer_manager.o obj/errors.o
 	gcc -g obj/aurras.o obj/buffer_manager.o obj/errors.o -o bin/aurras

@@ -160,7 +160,7 @@ ask_status(void)
                     }
 
                     total = total_tasks_waiting;
-                    if (total_tasks_waiting > 0)
+                    if (double_cycle == 0 && total_tasks_waiting > 0)
                         puts("Waiting Tasks:");
                 }
 

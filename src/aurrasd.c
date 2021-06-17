@@ -233,6 +233,8 @@ last_sigchld_handler(int signum)
                 else
                     manage_tasks.end_tasks->next = new_task;
                 
+                new_task->next = NULL;
+                
                 manage_tasks.end_tasks = new_task;
 
                 Error error = run_task(new_task);

@@ -16,7 +16,6 @@
 #define MAIN_FIFO "tmp/FIFO_MAIN"
 #define TMP_FOLDER "tmp/"
 #define PROGRAM "aurrasd"
-#define CLIENT_TIMEOUT_TIME 10
 #define CLIENT_MAX_SIZE UINT32_MAX
 
 #define MSG_WAITING_TO_RUNNING "[Task started running right now]"
@@ -79,7 +78,6 @@ static ManageTasks manage_tasks =
 };
 static Filter * filters;
 static uint32_t num_filters = 0;
-static int ALARM_INTERRUPT;
 
 
 static Error run_task(Task * task);
@@ -289,6 +287,20 @@ sigalrm_handler(int signum)
     ALARM_INTERRUPT = 1;
 }
 
+static int
+open_client_fifo(const char * const path_name, int flags)
+{
+    int fd = -1;
+
+    alarm(CLIENT_TIMEOUT_TIME); // Avoid waiting
+    fd = open(path_name, flags);
+    alarm(0); // reset alarm
+
+
+    return fd;
+}
+
+
 inline static Error
 connect_main_fifo(int * fifo)
 {
@@ -424,7 +436,7 @@ status(const char * const fifo_str)
     uint32_t total_tasks_waiting = 0;
     uint32_t total_tasks_running = 0;
 
-    int fifo = open(fifo_str, O_WRONLY);
+    int fifo = open_client_fifo(fifo_str, O_WRONLY);
     if (fifo != -1)
     {
         task = manage_tasks.begin_tasks;
@@ -811,7 +823,7 @@ transform(const char * const fifo_str, ssize_t total_bytes)
 {
     Error error;
     BufferRead buffer_read;
-    int fifo = open(fifo_str, O_RDONLY | O_CLOEXEC); // O_CLOEXEC avoids children to inherit
+    int fifo = open_client_fifo(fifo_str, O_RDONLY | O_CLOEXEC); // O_CLOEXEC avoids children to inherit
 
     if (fifo != -1)
     {
@@ -926,7 +938,7 @@ transform(const char * const fifo_str, ssize_t total_bytes)
 
                                 close(fifo);
 
-                                fifo = open(fifo_str, O_WRONLY | O_CLOEXEC); // O_CLOEXEC avoids children to inherit
+                                fifo = open_client_fifo(fifo_str, O_WRONLY | O_CLOEXEC); // O_CLOEXEC avoids children to inherit
                                 if (fifo == -1)
                                     error = CANT_CONNECT_FIFO;
 

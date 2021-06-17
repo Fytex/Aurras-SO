@@ -5,6 +5,8 @@
 
 #define PAGE_SIZE 4096
 
+int ALARM_INTERRUPT = 0;
+
 
 Error
 init_ReadBuffer(BufferRead * const buffer_read, int file, ssize_t size)
@@ -88,11 +90,20 @@ _read_at_least(BufferRead * const buffer_read, ssize_t at_least)
 
     if (at_least == 0) // If not specified then we give the first block we receive
         at_least = 1;
+    
+    ALARM_INTERRUPT = 0;
+    alarm(CLIENT_TIMEOUT_TIME); // Avoid waiting
+    Error error = SUCCESS;
 
     while (bytes_left < at_least)
     {
         bytes_read = read(file, buffer, cap - len);
 
+        if (ALARM_INTERRUPT == 1)
+        {
+            error = CLIENT_TIMEOUT;
+            break;
+        }
         if (bytes_read == -1)
             return COMMUNICATION_FAILED;
         else if (bytes_read == 0)
@@ -102,8 +113,10 @@ _read_at_least(BufferRead * const buffer_read, ssize_t at_least)
         len += bytes_read;   
     }
 
+    alarm(0); // reset alarm
+
     buffer_read->len = len;
-    return SUCCESS;
+    return error;
 }
 
 

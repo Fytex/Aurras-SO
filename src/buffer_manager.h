@@ -9,6 +9,9 @@
 
 #include "errors.h"
 
+extern int ALARM_INTERRUPT;
+#define CLIENT_TIMEOUT_TIME 10
+
 typedef struct
 {
     void * buffer;

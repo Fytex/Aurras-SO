@@ -93,22 +93,29 @@ _read_at_least(BufferRead * const buffer_read, ssize_t at_least)
     alarm(CLIENT_TIMEOUT_TIME); // Avoid waiting
     Error error = SUCCESS;
 
-    while (bytes_left < at_least)
+    while (error == SUCCESS && bytes_left < at_least)
     {
         bytes_read = read(file, buffer, cap - len);
 
         if (ALARM_INTERRUPT == 1)
         {
             error = CLIENT_TIMEOUT;
-            break;
+            if (bytes_read > 0)
+                len += bytes_read; 
         }
-        if (bytes_read == -1)
-            return COMMUNICATION_FAILED;
-        else if (bytes_read == 0)
-            return NO_OPPOSITE_CONN;
+    
+        else if (bytes_read == -1)
+            error = COMMUNICATION_FAILED;
 
-        bytes_left += bytes_read;
-        len += bytes_read;   
+        else if (bytes_read == 0)
+            error = NO_OPPOSITE_CONN;
+
+        else
+        {
+            bytes_left += bytes_read;
+            len += bytes_read;  
+        }
+
     }
 
     alarm(0); // reset alarm

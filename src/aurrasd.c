@@ -12,7 +12,6 @@
 #include "buffer_manager.h"
 #include "errors.h"
 
-#define FILTERS_FOLDER "bin/aurrasd-filters/"
 #define MAIN_FIFO "tmp/FIFO_MAIN"
 #define TMP_FOLDER "tmp/"
 #define PROGRAM "aurrasd"
@@ -106,6 +105,7 @@ free_task(Task * const task)
     free(task->output);
     free(task->ordered_filters);
     free(task->table_count_filters);
+    free(task);
 }
 
 static Task *
@@ -355,10 +355,10 @@ load_configs(const char * const configs_file, const char * const filters_folder)
                         if (found != NULL)
                         {
                             char * relative_path = strsep(&found, " ");
-                            char * path = malloc((STRLEN(FILTERS_FOLDER) + strlen(relative_path) + 1) * sizeof (char));
+                            char * path = malloc((strlen(filters_folder) + strlen(relative_path) + 1) * sizeof (char));
                             if(path != NULL)
                             {
-                                filter.path = strcat(strcpy(path, FILTERS_FOLDER), relative_path);
+                                filter.path = strcat(strcpy(path, filters_folder), relative_path);
 
                                 if (found != NULL)
                                 {

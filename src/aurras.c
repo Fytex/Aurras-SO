@@ -226,7 +226,7 @@ transform(const char * const input, const char * const output, const char * cons
 {
     Error error;
     uint32_t send_bytes;
-    uint32_t * filters_send_bytes;
+    uint32_t * table_send_bytes;
     unsigned char * buffer, * buffer_cursor;
     char * fifo_str;
     int fifo;
@@ -235,18 +235,18 @@ transform(const char * const input, const char * const output, const char * cons
     if (access(input, F_OK) == -1)
         return INPUT_NOT_FOUND;
 
-    filters_send_bytes = malloc((n_filters + 2) * sizeof (size_t)); // filters + input + output
+    table_send_bytes = malloc((n_filters + 2) * sizeof (size_t)); // filters + input + output
 
-    if (filters_send_bytes == NULL)
+    if (table_send_bytes == NULL)
         return NOT_ENOUGH_MEMORY;
 
     send_bytes = 0;
 
-    send_bytes += (filters_send_bytes[0] = strlen(input) + 1);
-    send_bytes += (filters_send_bytes[1] = strlen(output) + 1);
+    send_bytes += (table_send_bytes[0] = strlen(input) + 1);
+    send_bytes += (table_send_bytes[1] = strlen(output) + 1);
 
     for (uint32_t i = 0; i < n_filters; ++i)
-        send_bytes += (filters_send_bytes[i + 2] = strlen(filters[i]) + 1);
+        send_bytes += (table_send_bytes[i + 2] = strlen(filters[i]) + 1);
 
     error = create_connection(&fifo_str, send_bytes);
 
@@ -262,17 +262,17 @@ transform(const char * const input, const char * const output, const char * cons
                 buffer_cursor = buffer;
 
                 // input
-                memcpy(buffer_cursor, input, filters_send_bytes[0]);
-                buffer_cursor += filters_send_bytes[0];
+                memcpy(buffer_cursor, input, table_send_bytes[0]);
+                buffer_cursor += table_send_bytes[0];
 
                 // output
-                memcpy(buffer_cursor, output, filters_send_bytes[1]);
-                buffer_cursor += filters_send_bytes[1];
+                memcpy(buffer_cursor, output, table_send_bytes[1]);
+                buffer_cursor += table_send_bytes[1];
 
                 for (uint32_t i = 0; i < n_filters; ++i)
                 {
-                    memcpy(buffer_cursor, filters[i], filters_send_bytes[i + 2]);
-                    buffer_cursor += filters_send_bytes[i + 2];
+                    memcpy(buffer_cursor, filters[i], table_send_bytes[i + 2]);
+                    buffer_cursor += table_send_bytes[i + 2];
                 }
 
                 if (write(fifo, buffer, send_bytes) == -1)
@@ -363,7 +363,7 @@ transform(const char * const input, const char * const output, const char * cons
         
     }
 
-    free(filters_send_bytes);
+    free(table_send_bytes);
     return error;
 }
 

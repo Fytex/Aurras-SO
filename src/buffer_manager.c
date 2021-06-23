@@ -10,7 +10,10 @@ int ACTIVE_ALARM = 0;
 Error
 init_ReadBuffer(BufferRead * const buffer_read, int file, ssize_t size)
 {
-    void * buffer = malloc(size == 0 ? PAGE_SIZE : size);
+    if (size == 0)
+        size = PAGE_SIZE;
+
+    void * buffer = malloc(size);
 
     if (buffer == NULL)
         return NOT_ENOUGH_MEMORY;
